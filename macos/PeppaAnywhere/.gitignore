@@ -1,3 +1,4 @@
 .build/
 Sources/PeppaAnywhere/Resources/WebApp/*
-!Sources/PeppaAnywhere/Resources/WebApp/README.md
+Sources/PeppaAnywhere/Resources/*
+!Sources/PeppaAnywhere/Resources/strobI.avatar.json

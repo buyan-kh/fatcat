@@ -21,12 +21,16 @@ let package = Package(
         .library(name: "PeppaAnywhereCore", targets: ["PeppaAnywhereCore"]),
         .executable(name: "PeppaAnywhere", targets: ["PeppaAnywhere"]),
     ],
+    dependencies: [
+        .package(url: "https://github.com/groue/GRDB.swift.git", from: "7.0.0")
+    ],
     targets: [
-        .target(name: "PeppaAnywhereCore", swiftSettings: testingSwiftSettings),
+        .target(name: "PeppaAnywhereCore", dependencies: [.product(name: "GRDB", package: "GRDB.swift")], swiftSettings: testingSwiftSettings),
         .executableTarget(
             name: "PeppaAnywhere",
             dependencies: ["PeppaAnywhereCore"],
-            resources: [.process("Resources")]
+            exclude: ["Resources/WebApp"],
+            resources: [.copy("Resources/strobI.avatar.json")]
         ),
         .testTarget(
             name: "PeppaAnywhereCoreTests",
