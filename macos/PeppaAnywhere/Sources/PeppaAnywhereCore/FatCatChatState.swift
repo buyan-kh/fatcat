@@ -84,21 +84,29 @@ public struct ChatScrollState: Equatable, Sendable {
     public private(set) var shouldAutoScroll = true
     public private(set) var hasUnreadBelow = false
     public private(set) var latestMessageRevision = 0
+    private var contentGrowthNeedsScroll = false
 
     public init() {}
 
     public mutating func noteContentChanged() {
         latestMessageRevision += 1
+        contentGrowthNeedsScroll = shouldAutoScroll
         if !shouldAutoScroll { hasUnreadBelow = true }
     }
 
     public mutating func noteStreamingChanged() {
         latestMessageRevision += 1
+        contentGrowthNeedsScroll = shouldAutoScroll
         if !shouldAutoScroll { hasUnreadBelow = true }
     }
 
     public mutating func updateViewport(isNearBottom: Bool) {
         self.isNearBottom = isNearBottom
+        if !isNearBottom, contentGrowthNeedsScroll {
+            contentGrowthNeedsScroll = false
+            return
+        }
+        contentGrowthNeedsScroll = false
         shouldAutoScroll = isNearBottom
         if isNearBottom { hasUnreadBelow = false }
     }
@@ -107,6 +115,7 @@ public struct ChatScrollState: Equatable, Sendable {
         isNearBottom = true
         shouldAutoScroll = true
         hasUnreadBelow = false
+        contentGrowthNeedsScroll = false
     }
 
     public mutating func opened() {

@@ -58,7 +58,7 @@ struct NativeDomainTests {
             "Settings",
             "Memory",
             "Action History",
-            "Quit Peppa Anywhere",
+            "Quit FatCat",
         ])
     }
 

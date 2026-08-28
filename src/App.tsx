@@ -36,7 +36,7 @@ export function App() {
         event.preventDefault()
         emit('pet-context-menu')
       }}
-      aria-label="Peppa Anywhere desktop pet"
+      aria-label="FatCat desktop pet"
     >
       <PeppaCompanionAvatar
         definition={bundledDefinition as Readonly<AvatarDefinition>}

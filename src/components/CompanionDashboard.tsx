@@ -115,7 +115,7 @@ export function CompanionDashboard({ definition }: CompanionDashboardProps) {
       })].slice(-10))
       if (result.verified) {
         move('celebrating', 'critic verified the observed result')
-        setHistory((current) => [`${timestamp()} · Verified success · Peppa celebrated`, ...current].slice(0, 6))
+        setHistory((current) => [`${timestamp()} · Verified success · FatCat celebrated`, ...current].slice(0, 6))
         setMemory((current) => appendMemory(current, 'episodic', { id: `lesson-${Date.now()}`, content: 'Structured local observation completed and verified.', createdAt: new Date().toISOString(), source: 'learning_record' }))
       } else move('recovering', 'observed result differed')
     }, 700)
@@ -175,24 +175,24 @@ export function CompanionDashboard({ definition }: CompanionDashboardProps) {
     <>
       <section className="companion-hero" aria-labelledby="companion-heading">
         <div className="companion-copy">
-          <p className="eyebrow">Peppa Anywhere · local companion MVP</p>
+          <p className="eyebrow">FatCat · local companion MVP</p>
           <h1 id="companion-heading">A small presence<br /><i>that earns trust.</i></h1>
-          <p className="companion-lede">Peppa sees structured context, understands what it means, and helps only when the next step is safe and relevant.</p>
+          <p className="companion-lede">FatCat sees structured context, understands what it means, and helps only when the next step is safe and relevant.</p>
           <div className="companion-actions"><button className="button button-accent" type="button" onClick={observeNow} disabled={!captureActive}>Observe now</button><button className="button button-secondary" type="button" onClick={toggleObservation}>{observing ? 'Pause observation' : 'Resume observation'}</button></div>
         </div>
         <PeppaCompanionAvatar definition={definition} state={state} paused={paused} onPauseChange={setPaused} />
       </section>
 
       <section className="trust-strip" aria-label="Trust status">
-        <div className={`trust-status ${captureActive ? 'is-on' : 'is-off'}`}><span className="trust-pulse" /> <strong>{captureActive ? 'Observing' : 'Paused'}</strong><span>{captureActive ? 'structured context only' : native ? 'capture is stopped' : 'Peppa is quiet'}</span></div>
+        <div className={`trust-status ${captureActive ? 'is-on' : 'is-off'}`}><span className="trust-pulse" /> <strong>{captureActive ? 'Observing' : 'Paused'}</strong><span>{captureActive ? 'structured context only' : native ? 'capture is stopped' : 'FatCat is quiet'}</span></div>
         <div><span className="trust-label">Mode</span><strong>Local-only</strong></div>
         <div><span className="trust-label">Raw screenshots</span><strong>Permanently off</strong></div>
         <div><span className="trust-label">Native host</span><strong>{native ? 'Connected' : 'Demo mode'}</strong></div>
       </section>
 
-      <section className="companion-grid" aria-label="Peppa controls and context">
+      <section className="companion-grid" aria-label="FatCat controls and context">
         <article className="companion-card observation-card">
-          <div className="card-heading"><div><p className="eyebrow">01 · Perception</p><h2>What Peppa saw</h2></div><span className="card-status">{observation.confidence.toFixed(2)} confidence</span></div>
+          <div className="card-heading"><div><p className="eyebrow">01 · Perception</p><h2>What FatCat saw</h2></div><span className="card-status">{observation.confidence.toFixed(2)} confidence</span></div>
           <div className="observation-readout"><div><span>Active app</span><strong>{observation.activeApp}</strong></div><div><span>Window / task</span><strong>{observation.visibleWindow} · {observation.task}</strong></div><div><span>Detected event</span><strong>{observation.detectedEvent}</strong></div><div><span>Repeated activity</span><strong>{observation.repeatedActivity}</strong></div><div><span>Likely state</span><strong>{observation.likelyUserState}</strong></div></div>
           <div className="privacy-note"><span className="privacy-lock">⌑</span><div><strong>{observation.privacy.redacted ? 'Private context redacted' : 'No raw screenshot retained'}</strong><p>{observation.privacy.reason}</p></div></div>
           <div className="card-actions"><button className="button button-secondary" type="button" onClick={requestPermission}>Request Screen Recording</button><span>{permissionStatus}</span></div>
@@ -214,7 +214,7 @@ export function CompanionDashboard({ definition }: CompanionDashboardProps) {
 
         <article className="companion-card goals-card">
           <div className="card-heading"><div><p className="eyebrow">03 · Goals</p><h2>What matters now</h2></div><button className="button button-quiet" type="button" onClick={addDefaultGoal}>+ Add goal</button></div>
-          {goals.length === 0 ? <div className="empty-state"><strong>No personal goals yet.</strong><p>Peppa will check goals before deciding whether to respond.</p></div> : goals.map((goal) => <div className="goal-item" key={goal.id}><div className="goal-priority">{goal.priority}</div><div><strong>{goal.goal}</strong><span>{goal.currentState} · next: {goal.nextAction}</span><small>Success: {goal.successCondition}</small></div></div>)}
+          {goals.length === 0 ? <div className="empty-state"><strong>No personal goals yet.</strong><p>FatCat will check goals before deciding whether to respond.</p></div> : goals.map((goal) => <div className="goal-item" key={goal.id}><div className="goal-priority">{goal.priority}</div><div><strong>{goal.goal}</strong><span>{goal.currentState} · next: {goal.nextAction}</span><small>Success: {goal.successCondition}</small></div></div>)}
         </article>
 
         <article className="companion-card memory-card">
@@ -226,13 +226,13 @@ export function CompanionDashboard({ definition }: CompanionDashboardProps) {
       </section>
 
       <section className="explanation-panel" aria-labelledby="explanation-heading">
-        <div><p className="eyebrow">Trust receipt</p><h2 id="explanation-heading">What Peppa saw, and why she acted</h2><p>Every response is grounded in a local observation, a goal check, and a risk decision. {interruption.interrupt ? 'This result is actionable and may interrupt.' : interruption.reason}</p></div>
+        <div><p className="eyebrow">Trust receipt</p><h2 id="explanation-heading">What FatCat saw, and why it acted</h2><p>Every response is grounded in a local observation, a goal check, and a risk decision. {interruption.interrupt ? 'This result is actionable and may interrupt.' : interruption.reason}</p></div>
         <div className="receipt-steps"><div><span>1</span><strong>Observe</strong><small>{observation.activeApp} · {observation.timestamp ? new Date(observation.timestamp).toLocaleTimeString() : 'now'}</small></div><div><span>2</span><strong>Decide</strong><small>{avatarAnimationForState[state].label} · {state}</small></div><div><span>3</span><strong>Remember</strong><small>{history[0]}</small></div></div>
       </section>
 
       <section className="history-panel" aria-labelledby="history-heading"><div className="history-heading"><div><p className="eyebrow">Audit trail</p><h2 id="history-heading">Recent actions</h2></div><span>{history.length} local events</span></div><div className="history-list">{history.map((item, index) => <div key={`${item}-${index}`}><span className="history-dot" />{item}</div>)}</div><div className="learning-summary"><span className="trust-label">Learning record · {learningRecords.length} stored</span><span>{learningRecords.at(-1)?.reusableLesson ?? 'Verified actions will record plan, result, difference, correction, and reusable lesson.'}</span></div></section>
 
-      <button className="lab-toggle" type="button" onClick={() => document.getElementById('avatar-lab')?.scrollIntoView({ behavior: 'smooth' })}>Jump to preserved Peppa avatar lab <span>↘</span></button>
+      <button className="lab-toggle" type="button" onClick={() => document.getElementById('avatar-lab')?.scrollIntoView({ behavior: 'smooth' })}>Jump to preserved FatCat avatar lab <span>↘</span></button>
     </>
   )
 }

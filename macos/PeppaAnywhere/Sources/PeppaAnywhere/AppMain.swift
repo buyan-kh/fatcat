@@ -602,6 +602,11 @@ private struct FatCatMarkdownView: View {
             }
         }
         .textSelection(.enabled)
+        .environment(\.openURL, OpenURLAction { url in
+            guard let scheme = url.scheme?.lowercased(), scheme == "http" || scheme == "https",
+                  NSWorkspace.shared.open(url) else { return .discarded }
+            return .handled
+        })
     }
 
     @ViewBuilder
@@ -616,7 +621,7 @@ private struct FatCatMarkdownView: View {
                 inlineText(text).foregroundStyle(.secondary)
             }
         case let .unorderedList(items):
-            VStack(alignment: .leading, spacing: 5) { ForEach(items, id: \.self) { inlineText("•  \($0)") } }
+            VStack(alignment: .leading, spacing: 5) { ForEach(Array(items.enumerated()), id: \.offset) { _, item in inlineText("•  \(item)") } }
         case let .orderedList(items):
             VStack(alignment: .leading, spacing: 5) { ForEach(Array(items.enumerated()), id: \.offset) { index, item in inlineText("\(index + 1).  \(item)") } }
         case let .code(language, text):
@@ -634,9 +639,9 @@ private struct FatCatMarkdownView: View {
             .clipShape(RoundedRectangle(cornerRadius: 10))
         case let .table(headers, rows):
             VStack(alignment: .leading, spacing: 4) {
-                HStack { ForEach(headers, id: \.self) { Text($0).fontWeight(.semibold).frame(minWidth: 90, alignment: .leading) } }
+                HStack { ForEach(Array(headers.enumerated()), id: \.offset) { _, header in Text(header).fontWeight(.semibold).frame(minWidth: 90, alignment: .leading) } }
                 Divider()
-                ForEach(Array(rows.enumerated()), id: \.offset) { _, row in HStack { ForEach(row, id: \.self) { Text($0).frame(minWidth: 90, alignment: .leading) } } }
+                ForEach(Array(rows.enumerated()), id: \.offset) { _, row in HStack { ForEach(Array(row.enumerated()), id: \.offset) { _, cell in Text(cell).frame(minWidth: 90, alignment: .leading) } } }
             }.font(.system(size: 13))
         }
     }
@@ -650,6 +655,7 @@ private struct FatCatMarkdownView: View {
 private struct FatCatMessageRow: View {
     let message: ChatMessage
     let onCopy: (String) -> Void
+    let onEdit: () -> Void
     let onRetry: () -> Void
     @State private var isHovered = false
 
@@ -673,6 +679,7 @@ private struct FatCatMessageRow: View {
                 if isHovered {
                     HStack(spacing: 10) {
                         Button { onCopy(message.text) } label: { Image(systemName: "doc.on.doc") }.buttonStyle(.plain).help("Copy")
+                        if message.role == .user { Button { onEdit() } label: { Image(systemName: "pencil") }.buttonStyle(.plain).help("Edit and resend") }
                         if message.role == .assistant { Button { onRetry() } label: { Image(systemName: "arrow.clockwise") }.buttonStyle(.plain).help("Retry") }
                     }.font(.system(size: 11)).foregroundStyle(.secondary)
                 }
@@ -755,7 +762,7 @@ struct ChatBubble: View {
                                     }.padding(.vertical, 22)
                                 } else {
                                     ForEach(model.messages) { message in
-                                        FatCatMessageRow(message: message, onCopy: copy, onRetry: onRetry)
+                                        FatCatMessageRow(message: message, onCopy: copy, onEdit: { edit(message.text) }, onRetry: onRetry)
                                     }
                                 }
                                 Color.clear.frame(height: 1).id("chat-bottom-anchor")
@@ -833,6 +840,11 @@ struct ChatBubble: View {
     private func copy(_ text: String) {
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(text, forType: .string)
+    }
+
+    private func edit(_ text: String) {
+        model.draft = text
+        model.focusComposerToken += 1
     }
 
 }

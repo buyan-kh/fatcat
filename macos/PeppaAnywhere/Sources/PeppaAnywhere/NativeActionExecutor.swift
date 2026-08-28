@@ -12,7 +12,7 @@ struct NativeExecutionResult: Equatable {
 final class NativeActionExecutor {
     func execute(_ proposal: NativeActionProposal, approval: NativeActionApproval) -> NativeExecutionResult {
         switch NativeActionPolicy.validate(proposal, approval: approval) {
-        case .rejected: return NativeExecutionResult(success: false, detail: "Action was denied by Peppa's local permission policy.")
+        case .rejected: return NativeExecutionResult(success: false, detail: "Action was denied by FatCat's local permission policy.")
         case .needsApproval: return NativeExecutionResult(success: false, detail: "User approval is required before this action can run.")
         case .ready: break
         }

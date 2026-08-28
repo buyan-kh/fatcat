@@ -54,6 +54,17 @@ struct FatCatChatStateTests {
         #expect(state.hasUnreadBelow == false)
     }
 
+    @Test func contentGrowthDoesNotLookLikeAUserScroll() {
+        var state = ChatScrollState()
+        state.noteStreamingChanged()
+        state.updateViewport(isNearBottom: false)
+
+        #expect(state.shouldAutoScroll)
+
+        state.updateViewport(isNearBottom: false)
+        #expect(state.shouldAutoScroll == false)
+    }
+
     @Test func openingChatReturnsToLatest() {
         var state = ChatScrollState()
         state.updateViewport(isNearBottom: false)

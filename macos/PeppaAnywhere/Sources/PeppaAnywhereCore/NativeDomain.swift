@@ -172,7 +172,7 @@ public enum PetMenuCommand: String, CaseIterable, Equatable, Sendable {
         case .settings: return "Settings"
         case .memory: return "Memory"
         case .actionHistory: return "Action History"
-        case .quit: return "Quit Peppa Anywhere"
+        case .quit: return "Quit FatCat"
         }
     }
 }
