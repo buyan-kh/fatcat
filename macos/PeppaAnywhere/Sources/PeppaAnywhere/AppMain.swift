@@ -8,6 +8,7 @@ import PeppaAnywhereCore
 import ScreenCaptureKit
 import SwiftUI
 import Vision
+import WebKit
 
 @MainActor
 final class ScreenPerceptionCoordinator: NSObject, ObservableObject {
@@ -182,7 +183,7 @@ struct ChatMessage: Identifiable, Equatable {
 
 @MainActor
 final class PetModel: ObservableObject {
-    @Published var state = PeppaState.idle
+    @Published var life = FatCatLife()
     @Published var isChatOpen = false
     @Published var isExpanded = false
     @Published var draft = ""
@@ -198,11 +199,11 @@ final class PetModel: ObservableObject {
     @Published var isShowingHistory = false
     @Published var focusComposerToken = 0
     var retryState = FatCatRetryState()
-    private var stateMachine = PeppaStateMachine()
 
-    func setState(_ next: PeppaState, verified: Bool = false, reason: String = "") {
-        let transition = stateMachine.transition(to: next, verified: verified, reason: reason)
-        if transition.accepted { state = transition.state }
+    func handleLife(_ event: FatCatLifeEvent, at now: Date = Date()) {
+        var next = life
+        next.handle(event, at: now)
+        life = next
     }
 
     func appendUser(_ text: String) {
@@ -449,38 +450,64 @@ final class PeppaAgentClient: ObservableObject {
     }
 }
 
-struct PeppaAvatarView: View {
-    let renderer: PeppaAvatarRenderer
+struct FatCatAvatarView: NSViewRepresentable {
     let animationKey: String
     let onClick: () -> Void
 
-    var body: some View {
-        TimelineView(.animation) { timeline in
-            let frame = renderer.frame(animationKey: animationKey, elapsed: timeline.date.timeIntervalSinceReferenceDate)
-            Canvas { context, size in
-                let center = CGPoint(x: size.width / 2, y: size.height / 2)
-                let scale = renderer.scaleToFit(width: size.width, height: size.height)
-                context.translateBy(x: center.x, y: center.y)
-                context.scaleBy(x: scale, y: scale)
-                context.translateBy(x: -center.x, y: -center.y)
-                context.fill(path(frame.head, center: center, yScale: -1), with: .color(Color(hex: frame.bodyColor)))
-                context.fill(path(frame.leftEye, center: center, yScale: -1), with: .color(Color(hex: frame.eyeColor)))
-                context.fill(path(frame.rightEye, center: center, yScale: -1), with: .color(Color(hex: frame.eyeColor)))
-            }
-            .contentShape(Rectangle())
-            .onTapGesture(perform: onClick)
-        }
-    }
-}
+    func makeCoordinator() -> Coordinator { Coordinator(onClick: onClick) }
 
-private extension View {
-    func path(_ points: [PeppaAvatarPoint], center: CGPoint, yScale: CGFloat) -> Path {
-        var path = Path()
-        guard let first = points.first else { return path }
-        path.move(to: CGPoint(x: center.x + first.x, y: center.y + first.y * yScale))
-        for point in points.dropFirst() { path.addLine(to: CGPoint(x: center.x + point.x, y: center.y + point.y * yScale)) }
-        path.closeSubpath()
-        return path
+    func makeNSView(context: Context) -> WKWebView {
+        let configuration = WKWebViewConfiguration()
+        configuration.preferences.javaScriptCanOpenWindowsAutomatically = false
+        configuration.userContentController.add(context.coordinator, name: "fatcatAvatar")
+
+        let webView = WKWebView(frame: .zero, configuration: configuration)
+        webView.navigationDelegate = context.coordinator
+        webView.setValue(false, forKey: "drawsBackground")
+        webView.underPageBackgroundColor = .clear
+        webView.allowsMagnification = false
+        webView.allowsBackForwardNavigationGestures = false
+
+        guard let avatarURL = Bundle.module.url(forResource: "avatar", withExtension: "html", subdirectory: "FatCatAvatar") else {
+            assertionFailure("FatCat avatar surface is missing from the app bundle")
+            return webView
+        }
+        webView.loadFileURL(avatarURL, allowingReadAccessTo: avatarURL.deletingLastPathComponent())
+        context.coordinator.webView = webView
+        context.coordinator.animationKey = animationKey
+        return webView
+    }
+
+    func updateNSView(_ webView: WKWebView, context: Context) {
+        context.coordinator.webView = webView
+        context.coordinator.animationKey = animationKey
+        context.coordinator.onClick = onClick
+        context.coordinator.pushAnimationIfReady()
+    }
+
+    final class Coordinator: NSObject, WKNavigationDelegate, WKScriptMessageHandler {
+        weak var webView: WKWebView?
+        var animationKey = "idle"
+        var onClick: () -> Void
+        private var didFinishLoading = false
+
+        init(onClick: @escaping () -> Void) { self.onClick = onClick }
+
+        func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+            didFinishLoading = true
+            pushAnimationIfReady()
+        }
+
+        func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
+            guard message.name == "fatcatAvatar", let body = message.body as? [String: Any], body["type"] as? String == "click" else { return }
+            onClick()
+        }
+
+        func pushAnimationIfReady() {
+            guard didFinishLoading, let webView else { return }
+            guard let data = try? JSONSerialization.data(withJSONObject: animationKey), let value = String(data: data, encoding: .utf8) else { return }
+            webView.evaluateJavaScript("window.fatCatAvatar?.setAnimation(\(value));", completionHandler: nil)
+        }
     }
 }
 
@@ -908,7 +935,6 @@ private struct ConversationHistoryView: View {
 
 struct PetRootView: View {
     @ObservedObject var model: PetModel
-    let renderer: PeppaAvatarRenderer
     let onClick: () -> Void
     let onSend: () -> Void
     let onRetry: () -> Void
@@ -925,11 +951,11 @@ struct PetRootView: View {
         Group {
             if model.isChatOpen {
                 HStack(alignment: .bottom, spacing: 12) {
-                    PeppaAvatarView(renderer: renderer, animationKey: model.state.animationKey, onClick: onClick).frame(width: 200, height: 200)
+                    FatCatAvatarView(animationKey: model.life.animationKey, onClick: onClick).frame(width: 200, height: 200)
                     ChatBubble(model: model, onSend: onSend, onRetry: onRetry, onReconnect: onReconnect, onStop: onStop, onClose: onClose, onExpand: onExpand, onNewChat: onNewChat, onSelectConversation: onSelectConversation, onDeleteConversation: onDeleteConversation, onRenameConversation: onRenameConversation)
                 }.padding(14)
             } else {
-                PeppaAvatarView(renderer: renderer, animationKey: model.state.animationKey, onClick: onClick).frame(width: 220, height: 220)
+                FatCatAvatarView(animationKey: model.life.animationKey, onClick: onClick).frame(width: 220, height: 220)
             }
         }.background(Color.clear)
     }
@@ -948,7 +974,6 @@ final class PetWindowController: NSObject, NSWindowDelegate {
     private let positionStore = PetPositionStore()
     private var auditStore: PeppaAuditStore?
     private let conversationStore: FatCatConversationStore
-    private let renderer: PeppaAvatarRenderer
     private var latestObservation: ObservationPayload?
     private struct PendingPrompt {
         let conversationID: String
@@ -959,6 +984,8 @@ final class PetWindowController: NSObject, NSWindowDelegate {
     private var pendingSessionConversationID: String?
     private var ignoredRequestIDs = Set<String>()
     private var activeSessionID: String?
+    private var lastObservedApp: String?
+    private var lastObservedWindow: String?
     private var panel: PetPanel!
     private var statusItem: NSStatusItem!
     private var secondaryWindows: [NSWindow] = []
@@ -966,7 +993,6 @@ final class PetWindowController: NSObject, NSWindowDelegate {
 
     init(perception: ScreenPerceptionCoordinator) {
         self.perception = perception
-        renderer = Self.loadRenderer()
         auditStore = nil
         conversationStore = Self.makeConversationStore()
         super.init()
@@ -976,9 +1002,20 @@ final class PetWindowController: NSObject, NSWindowDelegate {
             self?.latestObservation = observation
             self?.recordObservation(observation)
             self?.agent.send(observation: observation)
+            guard let self else { return }
+            let app = observation.activeApp
+            let window = observation.visibleWindow
+            guard app != lastObservedApp || window != lastObservedWindow else { return }
+            lastObservedApp = app
+            lastObservedWindow = window
+            model.handleLife(.observationChanged(app: app, window: window, redacted: observation.privacy.redacted))
         }
         agent.onMessage = { [weak self] message in self?.handleAgentMessage(message) }
         agent.$status.receive(on: RunLoop.main).sink { [weak self] value in self?.model.agentStatus = value }.store(in: &cancellables)
+        Timer.publish(every: 1, on: .main, in: .common)
+            .autoconnect()
+            .sink { [weak self] now in self?.model.handleLife(.tick, at: now) }
+            .store(in: &cancellables)
         buildPanel()
         buildStatusItem()
     }
@@ -1021,7 +1058,7 @@ final class PetWindowController: NSObject, NSWindowDelegate {
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         panel.isMovableByWindowBackground = true
         panel.hidesOnDeactivate = false
-        panel.contentView = NSHostingView(rootView: PetRootView(model: model, renderer: renderer, onClick: { [weak self] in self?.openChat() }, onSend: { [weak self] in self?.sendChat() }, onRetry: { [weak self] in self?.retryLastPrompt() }, onReconnect: { [weak self] in self?.agent.reconnect() }, onStop: { [weak self] in self?.stopGeneration() }, onClose: { [weak self] in self?.closeChat() }, onExpand: { [weak self] in self?.toggleExpanded() }, onNewChat: { [weak self] in self?.newChat() }, onSelectConversation: { [weak self] record in self?.selectConversation(record) }, onDeleteConversation: { [weak self] record in self?.deleteConversation(record) }, onRenameConversation: { [weak self] record, title in self?.renameConversation(record, title: title) }))
+        panel.contentView = NSHostingView(rootView: PetRootView(model: model, onClick: { [weak self] in self?.openChat() }, onSend: { [weak self] in self?.sendChat() }, onRetry: { [weak self] in self?.retryLastPrompt() }, onReconnect: { [weak self] in self?.agent.reconnect() }, onStop: { [weak self] in self?.stopGeneration() }, onClose: { [weak self] in self?.closeChat() }, onExpand: { [weak self] in self?.toggleExpanded() }, onNewChat: { [weak self] in self?.newChat() }, onSelectConversation: { [weak self] record in self?.selectConversation(record) }, onDeleteConversation: { [weak self] record in self?.deleteConversation(record) }, onRenameConversation: { [weak self] record, title in self?.renameConversation(record, title: title) }))
     }
 
     private func buildStatusItem() {
@@ -1033,6 +1070,7 @@ final class PetWindowController: NSObject, NSWindowDelegate {
     private func openChat() {
         guard !model.isChatOpen else { return }
         model.isChatOpen = true
+        model.handleLife(.userOpenedChat)
         panel.setContentSize(NSSize(width: 660, height: 555))
         panel.makeKeyAndOrderFront(nil)
         resumeSelectedConversation()
@@ -1041,6 +1079,7 @@ final class PetWindowController: NSObject, NSWindowDelegate {
     private func closeChat() {
         model.isChatOpen = false
         model.isExpanded = false
+        model.handleLife(.userClosedChat)
         panel.setContentSize(NSSize(width: 220, height: 220))
         panel.orderFrontRegardless()
     }
@@ -1066,7 +1105,7 @@ final class PetWindowController: NSObject, NSWindowDelegate {
             return
         }
         model.appendUser(text)
-        model.setState(.listening, reason: "The user sent a message.")
+        model.handleLife(.userSentMessage(requestID: model.currentRequestID ?? UUID().uuidString, conversationID: record.id))
         try? conversationStore.update(recordID: record.id, title: record.title == "New chat" ? String(text.prefix(42)) : nil, preview: String(text.prefix(120)))
         model.conversations = conversationStore.records
         guard let sessionID = record.hermesSessionID, !sessionID.isEmpty else {
@@ -1109,7 +1148,7 @@ final class PetWindowController: NSObject, NSWindowDelegate {
         guard let recordID = model.selectedConversationID,
               let sessionID = conversationStore.records.first(where: { $0.id == recordID })?.hermesSessionID else { return }
         if let requestID = model.currentRequestID { ignoredRequestIDs.insert(requestID) }
-        model.setState(.recovering, reason: "Stopping the current response.")
+        model.handleLife(.userStoppedGeneration)
         agent.stopGeneration(sessionID: sessionID)
         if let requestID = model.currentRequestID { model.completeAssistant(requestID: requestID) }
         else { model.isGenerating = false }
@@ -1137,6 +1176,7 @@ final class PetWindowController: NSObject, NSWindowDelegate {
         model.isShowingHistory = false
         model.chatScrollState.opened()
         pendingSessionConversationID = record.id
+        model.handleLife(.userStartedNewChat)
         agent.newSession(conversationID: record.id, cwd: workspace)
     }
 
@@ -1211,28 +1251,26 @@ final class PetWindowController: NSObject, NSWindowDelegate {
         switch message {
         case let .assistantDelta(requestID, sessionID, text):
             guard isActiveSession(sessionID), !ignoredRequestIDs.contains(requestID) else { return }
-            model.setState(.understanding, reason: "FatCat Agent streamed a response.")
+            model.handleLife(.hermes(.streamDelta))
             if model.currentRequestID != requestID { model.beginAssistant(requestID: requestID) }
             model.appendAssistant(text, requestID: requestID)
         case .plan:
-            model.setState(.planning, reason: "Hermes streamed a plan.")
+            model.handleLife(.hermes(.plan))
         case let .toolCall(_, name, _):
-            model.setState(.planning, reason: "Hermes selected \(name).")
-            model.setState(.acting, reason: "A tool call is in progress.")
+            model.handleLife(.hermes(.toolCall(name: name)))
         case let .providerStatus(providerID, authenticated, detail):
             model.appendSystem("\(providerID): \(authenticated ? "available" : "unavailable") — \(detail)")
         case let .proposedAction(_, action, risk, reason):
-            model.setState(.planning, reason: "Hermes proposed a native action.")
-            model.setState(.askingPermission, reason: "Approval is required for \(risk)-risk action.")
+            model.handleLife(.hermes(.permissionRequested))
             model.appendSystem("Proposed \(action) (\(risk)): \(reason)")
         case let .permissionRequest(_, action, risk, reason):
-            model.setState(.askingPermission, reason: "FatCat is waiting for approval.")
+            model.handleLife(.hermes(.permissionRequested))
             model.appendSystem("Permission requested for \(action) (\(risk)): \(reason)")
         case let .actionResult(_, success, detail):
-            model.setState(success ? .verifying : .recovering, reason: detail)
+            model.handleLife(.hermes(success ? .actionSucceeded : .actionFailed))
             model.appendSystem(detail)
         case let .verificationResult(_, success, detail):
-            model.setState(success ? .celebrating : .recovering, verified: success, reason: detail)
+            model.handleLife(.hermes(success ? .verifiedSuccess : .verifiedFailure))
             model.appendSystem(detail)
         case let .memoryUpdate(sessionID, detail):
             guard isActiveSession(sessionID) else { return }
@@ -1246,7 +1284,7 @@ final class PetWindowController: NSObject, NSWindowDelegate {
             handleAgentState(state, requestID: requestID)
         case let .error(requestID, message):
             if let requestID, ignoredRequestIDs.contains(requestID) { return }
-            model.setState(.recovering, reason: message)
+            model.handleLife(.hermes(.turnFailed))
             if let requestID = model.currentRequestID,
                model.messages.contains(where: { $0.requestID == requestID }) {
                 model.failAssistant(requestID: requestID, message: message)
@@ -1298,26 +1336,35 @@ final class PetWindowController: NSObject, NSWindowDelegate {
         switch state {
         case .connecting: model.agentStatus = "Connecting…"
         case .ready: model.agentStatus = "Connected"
-        case .sending, .thinking, .streaming: model.setState(.understanding)
-        case .stopping: model.setState(.recovering, reason: "Stopping the response.")
+        case .sending, .thinking, .streaming:
+            model.handleLife(.hermes(.thought))
+        case .stopping:
+            model.handleLife(.hermes(.turnFailed))
         case .completed:
             if let requestID = requestID ?? model.currentRequestID { model.completeAssistant(requestID: requestID) }
-            model.setState(.idle)
+            model.handleLife(.hermes(.turnCompleted))
             if let conversationID = model.selectedConversationID, let sessionID = activeSessionID {
                 startNextPendingPrompt(for: conversationID, sessionID: sessionID)
             }
         case .failed:
             if let requestID = requestID ?? model.currentRequestID { model.failAssistant(requestID: requestID, message: "FatCat Agent stopped before completing the response.") }
-            model.setState(.recovering)
+            model.handleLife(.hermes(.turnFailed))
             if let conversationID = model.selectedConversationID, let sessionID = activeSessionID {
                 startNextPendingPrompt(for: conversationID, sessionID: sessionID)
             }
-        case .working: model.setState(.acting)
-        case .verifying: model.setState(.verifying)
-        case .waitingForApproval: model.setState(.askingPermission)
-        case .error: model.setState(.recovering)
-        case .disconnected: model.agentStatus = "Disconnected — reconnect to continue."
-        case .idle, .listening: model.setState(.idle)
+        case .working:
+            model.handleLife(.hermes(.toolCall(name: "")))
+        case .verifying:
+            model.handleLife(.hermes(.actionSucceeded))
+        case .waitingForApproval:
+            model.handleLife(.hermes(.permissionRequested))
+        case .error:
+            model.handleLife(.hermes(.turnFailed))
+        case .disconnected:
+            model.agentStatus = "Disconnected — reconnect to continue."
+            model.handleLife(.hermes(.disconnected))
+        case .idle, .listening:
+            break
         }
     }
 
@@ -1354,7 +1401,7 @@ final class PetWindowController: NSObject, NSWindowDelegate {
 
     @objc private func toggleObservation() {
         perception.setPaused(!perception.isPaused)
-        model.setState(perception.isPaused ? .sleeping : .idle)
+        model.handleLife(perception.isPaused ? .observationPaused : .observationResumed)
         statusItem.menu = makeMenu()
     }
 
@@ -1396,10 +1443,6 @@ final class PetWindowController: NSObject, NSWindowDelegate {
 
     func windowDidMove(_ notification: Notification) { positionStore.save(PetPosition(x: panel.frame.minX, y: panel.frame.minY)) }
 
-    private static func loadRenderer() -> PeppaAvatarRenderer {
-        if let url = Bundle.module.url(forResource: "strobI.avatar", withExtension: "json"), let data = try? Data(contentsOf: url), let definition = try? PeppaAvatarDefinition.decode(data: data) { return PeppaAvatarRenderer(definition: definition) }
-        return PeppaAvatarRenderer(definition: .init(name: "FatCat", body: .sphere, colors: .init(body: "#5b7fe5", eyes: "#111316"), expressions: [:], expressionOrder: [], animations: [:], animationOrder: []))
-    }
 }
 
 struct SettingsView: View {
@@ -1481,11 +1524,11 @@ struct PeppaAnywhereApp: App {
 
     init() {
         if CommandLine.arguments.contains("--verify-native-bundle") {
-            guard Bundle.module.url(forResource: "strobI.avatar", withExtension: "json") != nil else {
-                fputs("Native FatCat avatar resource is missing.\n", stderr)
+            guard Bundle.module.url(forResource: "avatar", withExtension: "html", subdirectory: "FatCatAvatar") != nil else {
+                fputs("Bundled FatCat avatar surface is missing.\n", stderr)
                 exit(EXIT_FAILURE)
             }
-                print("Native FatCat bundle is readable.")
+                print("Bundled FatCat avatar surface is readable.")
             exit(EXIT_SUCCESS)
         }
     }
