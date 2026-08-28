@@ -26,6 +26,7 @@ public enum FatCatWork: String, Equatable, Sendable {
     case listening
     case thinking
     case acting
+    case searching
     case asking
     case verifying
     case celebrating
@@ -108,6 +109,7 @@ public struct FatCatLife: Equatable, Sendable {
         case .listening, .asking: return "listening"
         case .thinking, .verifying: return "thinking"
         case .acting: return "working"
+        case .searching: return "searching"
         case .celebrating: return "celebrate"
         case .none: break
         }
@@ -124,7 +126,7 @@ public struct FatCatLife: Equatable, Sendable {
         switch work {
         case .listening: return .listening
         case .thinking: return .understanding
-        case .acting: return .acting
+        case .acting, .searching: return .acting
         case .asking: return .askingPermission
         case .verifying: return .verifying
         case .celebrating: return .celebrating
@@ -207,9 +209,9 @@ public struct FatCatLife: Equatable, Sendable {
         case .streamDelta, .thought, .plan:
             wake(at: now)
             work = .thinking
-        case .toolCall:
+        case .toolCall(let name):
             wake(at: now)
-            work = .acting
+            work = name.lowercased().contains("search") ? .searching : .acting
         case .permissionRequested:
             wake(at: now)
             work = .asking
