@@ -1,0 +1,3 @@
+.build/
+Sources/PeppaAnywhere/Resources/WebApp/*
+!Sources/PeppaAnywhere/Resources/WebApp/README.md
