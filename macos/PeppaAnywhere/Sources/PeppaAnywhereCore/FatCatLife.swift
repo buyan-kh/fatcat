@@ -226,6 +226,7 @@ public struct FatCatLife: Equatable, Sendable {
             work = .celebrating
             mood = .pleased
         case .turnCompleted:
+            guard work != .celebrating else { return }
             wake(at: now)
             work = .none
             if mood == .curious || mood == .tired { mood = .calm }

@@ -112,6 +112,10 @@ struct FatCatLifeTests {
         #expect(life.animationKey == "celebrate")
         #expect(life.peppaState == .celebrating)
 
+        life.handle(.hermes(.turnCompleted), at: start)
+        #expect(life.work == .celebrating)
+        #expect(life.animationKey == "celebrate")
+
         life.handle(.tick, at: start.addingTimeInterval(FatCatLifeTiming.celebrateHold))
         #expect(life.work == .none)
         #expect(life.mood == .pleased)
