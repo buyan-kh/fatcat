@@ -113,7 +113,7 @@ function FatCatAvatarSurface() {
       let earPerk = 0
       if (!reduceMotion.matches && isIdle && !flightActive) {
         pose = groundedLifePose(elapsed)
-        follow = followThroughPose(elapsed)
+        follow = NEUTRAL_FOLLOW
         twitch = earTwitchRotation(elapsed % earTwitchWindowMs, earTwitches)
       }
       const reactionState = reactionRef.current

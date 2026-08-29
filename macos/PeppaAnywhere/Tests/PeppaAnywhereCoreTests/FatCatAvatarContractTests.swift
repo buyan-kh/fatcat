@@ -81,6 +81,15 @@ struct FatCatAvatarContractTests {
         #expect(manifest.contains("Resources/FatCatAvatar"))
     }
 
+    @Test func productPathUsesEventLedFlightAndReactionCues() throws {
+        let appMain = try loadText("macos/PeppaAnywhere/Sources/PeppaAnywhere/AppMain.swift")
+
+        #expect(appMain.contains("onLifeEvent"))
+        #expect(appMain.contains("reactionCue"))
+        #expect(appMain.contains("flushPendingFlightIfSafe"))
+        #expect(!appMain.contains("reason = .idleReposition"))
+    }
+
     private func loadJSON(_ relativePath: String) throws -> [String: Any] {
         let data = try Data(contentsOf: repositoryRoot.appendingPathComponent(relativePath))
         return try #require(JSONSerialization.jsonObject(with: data) as? [String: Any])

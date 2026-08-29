@@ -169,6 +169,12 @@ struct FlightCue: Equatable {
     let revision: Int
 }
 
+struct ReactionCue: Equatable {
+    let intensity: Double
+    let durationMs: Double
+    let revision: Int
+}
+
 struct ChatMessage: Identifiable, Equatable {
     let id: UUID
     let role: Role
@@ -206,12 +212,15 @@ final class PetModel: ObservableObject {
     @Published var isShowingHistory = false
     @Published var focusComposerToken = 0
     @Published var flightCue: FlightCue?
+    @Published var reactionCue: ReactionCue?
+    var onLifeEvent: ((FatCatLifeEvent) -> Void)?
     var retryState = FatCatRetryState()
 
     func handleLife(_ event: FatCatLifeEvent, at now: Date = Date()) {
         var next = life
         next.handle(event, at: now)
         life = next
+        onLifeEvent?(event)
     }
 
     func appendUser(_ text: String) {
@@ -502,6 +511,7 @@ private final class FatCatAvatarWebView: WKWebView {
 struct FatCatAvatarView: NSViewRepresentable {
     let animationKey: String
     let flightCue: FlightCue?
+    let reactionCue: ReactionCue?
     let onClick: () -> Void
     let onDragBegan: () -> Void
     let onDragEnded: () -> Void
@@ -545,6 +555,7 @@ struct FatCatAvatarView: NSViewRepresentable {
         (webView as? FatCatAvatarWebView)?.onDragEnded = onDragEnded
         context.coordinator.pushAnimationIfReady()
         context.coordinator.pushFlightCueIfReady(flightCue)
+        context.coordinator.pushReactionCueIfReady(reactionCue)
     }
 
     static func dismantleNSView(_ nsView: WKWebView, coordinator: Coordinator) {
@@ -558,6 +569,8 @@ struct FatCatAvatarView: NSViewRepresentable {
         private var isSurfaceReady = false
         private var lastFlightRevision = 0
         private var pendingFlightCue: FlightCue?
+        private var lastReactionRevision = 0
+        private var pendingReactionCue: ReactionCue?
 
         init(onClick: @escaping () -> Void) { self.onClick = onClick }
 
@@ -587,6 +600,10 @@ struct FatCatAvatarView: NSViewRepresentable {
                 self.pendingFlightCue = nil
                 pushFlightCueIfReady(pendingFlightCue)
             }
+            if let pendingReactionCue {
+                self.pendingReactionCue = nil
+                pushReactionCueIfReady(pendingReactionCue)
+            }
         }
 
         func pushFlightCueIfReady(_ cue: FlightCue?) {
@@ -597,6 +614,17 @@ struct FatCatAvatarView: NSViewRepresentable {
                 return
             }
             lastFlightRevision = cue.revision
+            webView.evaluateJavaScript(script, completionHandler: nil)
+        }
+
+        func pushReactionCueIfReady(_ cue: ReactionCue?) {
+            guard let cue, cue.revision != lastReactionRevision else { return }
+            guard isSurfaceReady, let webView,
+                  let script = FatCatAvatarBridge.setReactionJavaScript(intensity: cue.intensity, durationMs: cue.durationMs) else {
+                pendingReactionCue = cue
+                return
+            }
+            lastReactionRevision = cue.revision
             webView.evaluateJavaScript(script, completionHandler: nil)
         }
     }
@@ -1031,6 +1059,7 @@ private struct ConversationHistoryView: View {
 @MainActor
 final class FatCatFlightController {
     static let evaluationInterval: TimeInterval = 20
+    private static let minimumAttentionReactionInterval: TimeInterval = 1.5
     private static let positionLockKey = "fatcat.positionLocked"
     private static let movementPausedKey = "fatcat.movementPaused"
 
@@ -1046,6 +1075,9 @@ final class FatCatFlightController {
     private var lastDragEndedAt: Date?
     private var isDraggingPet = false
     private var flightCueRevision = 0
+    private var reactionCueRevision = 0
+    private var lastAttentionReactionAt: Date?
+    private var pendingFlight = FatCatFlightCueQueue()
     private var evaluationTask: Task<Void, Never>?
     private var phaseTask: Task<Void, Never>?
     private var frameTask: Task<Void, Never>?
@@ -1061,6 +1093,7 @@ final class FatCatFlightController {
         let seed = ProcessInfo.processInfo.environment["FATCAT_FLIGHT_SEED"].flatMap(UInt64.init)
             ?? UInt64(Date().timeIntervalSince1970 * 1000)
         random = SeededRandomSource(seed: seed)
+        model.onLifeEvent = { [weak self] event in self?.handleLifeEvent(event) }
     }
 
     var isPositionLocked: Bool {
@@ -1086,7 +1119,7 @@ final class FatCatFlightController {
             while !Task.isCancelled {
                 try? await Task.sleep(for: .seconds(Self.evaluationInterval))
                 guard !Task.isCancelled else { return }
-                self?.evaluateAutonomousFlight()
+                self?.flushPendingFlightIfSafe()
             }
         }
     }
@@ -1127,19 +1160,24 @@ final class FatCatFlightController {
         }
     }
 
-    private func evaluateAutonomousFlight() {
-        guard machine.state == .grounded, let panel, !model.isChatOpen else { return }
+    private func handleLifeEvent(_ event: FatCatLifeEvent) {
+        guard let cue = FatCatFlightEventPolicy.cue(for: event) else {
+            flushPendingFlightIfSafe()
+            return
+        }
+        sendReaction(cue.reaction)
+        if let reason = cue.flightReason { pendingFlight.enqueue(reason) }
+        flushPendingFlightIfSafe()
+    }
+
+    private func flushPendingFlightIfSafe() {
+        guard machine.state == .grounded,
+              let panel,
+              !model.isChatOpen,
+              let reason = pendingFlight.pendingReason else { return }
         let lifeState = model.life.peppaState
         guard FatCatFlightPolicy.allowsAutonomousFlight(for: lifeState) else { return }
         let context = currentContext(now: Date())
-        let reason: FatCatFlightReason
-        if lifeState == .celebrating {
-            reason = .verifiedSuccess
-        } else if context.secondsSinceUserActivity > 600 {
-            reason = .playfulAfterInactivity
-        } else {
-            reason = .idleReposition
-        }
         guard FatCatFlightPolicy.evaluate(reason: reason, context: context) == .allowed else { return }
         guard let screen = panel.screen ?? NSScreen.main else { return }
         let preferred = positionStore.load().map { CGPoint(x: $0.x, y: $0.y) }
@@ -1151,6 +1189,7 @@ final class FatCatFlightController {
             preferred: preferred,
             random: &random
         )
+        _ = pendingFlight.take()
         beginFlight(plan)
     }
 
@@ -1235,6 +1274,21 @@ final class FatCatFlightController {
         model.flightCue = FlightCue(phase: phase, tiltDegrees: tiltDegrees, durationMs: durationMs, revision: flightCueRevision)
     }
 
+    private func sendReaction(_ reaction: FatCatReaction) {
+        let now = Date()
+        if reaction == .attention,
+           let lastAttentionReactionAt,
+           now.timeIntervalSince(lastAttentionReactionAt) < Self.minimumAttentionReactionInterval { return }
+        if reaction == .attention { lastAttentionReactionAt = now }
+        let intensity: Double
+        switch reaction {
+        case .perk, .celebrate: intensity = 1.0
+        case .attention, .recoil: intensity = 0.65
+        }
+        reactionCueRevision += 1
+        model.reactionCue = ReactionCue(intensity: intensity, durationMs: 650, revision: reactionCueRevision)
+    }
+
     private func currentContext(now: Date) -> FatCatFlightContext {
         var context = FatCatFlightContext()
         context.isTyping = CGEventSource.secondsSinceLastEventType(.combinedSessionState, eventType: .keyDown) < 2
@@ -1309,11 +1363,11 @@ struct PetRootView: View {
         Group {
             if model.isChatOpen {
                 HStack(alignment: .bottom, spacing: 12) {
-                    FatCatAvatarView(animationKey: model.life.animationKey, flightCue: model.flightCue, onClick: onClick, onDragBegan: onDragBegan, onDragEnded: onDragEnded).frame(width: 200, height: 200)
+                    FatCatAvatarView(animationKey: model.life.animationKey, flightCue: model.flightCue, reactionCue: model.reactionCue, onClick: onClick, onDragBegan: onDragBegan, onDragEnded: onDragEnded).frame(width: 200, height: 200)
                     ChatBubble(model: model, onSend: onSend, onRetry: onRetry, onReconnect: onReconnect, onStop: onStop, onClose: onClose, onExpand: onExpand, onNewChat: onNewChat, onSelectConversation: onSelectConversation, onDeleteConversation: onDeleteConversation, onRenameConversation: onRenameConversation)
                 }.padding(14)
             } else {
-                FatCatAvatarView(animationKey: model.life.animationKey, flightCue: model.flightCue, onClick: onClick, onDragBegan: onDragBegan, onDragEnded: onDragEnded).frame(width: 220, height: 220)
+                FatCatAvatarView(animationKey: model.life.animationKey, flightCue: model.flightCue, reactionCue: model.reactionCue, onClick: onClick, onDragBegan: onDragBegan, onDragEnded: onDragEnded).frame(width: 220, height: 220)
             }
         }.background(Color.clear)
     }
@@ -1432,6 +1486,7 @@ final class PetWindowController: NSObject, NSWindowDelegate {
     private func openChat() {
         guard !model.isChatOpen else { return }
         flightController.cancelFlight()
+        model.handleLife(.userClickedAvatar)
         model.isChatOpen = true
         model.handleLife(.userOpenedChat)
         panel.setContentSize(NSSize(width: 660, height: 555))
