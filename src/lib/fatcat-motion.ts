@@ -96,6 +96,17 @@ export function idleLifePose(tMs: number): IdleLifePose {
   }
 }
 
+export function groundedLifePose(tMs: number): IdleLifePose {
+  return {
+    bodyScale: 1,
+    bodyRotationDeg: 0,
+    eyeScaleX: 1,
+    eyeScaleY: 1,
+    eyeRotationDeg: track(EYE_ROTATION, tMs),
+    eyeOffsetX: track(EYE_OFFSET_X, tMs),
+  }
+}
+
 export function followThroughPose(tMs: number): FollowThroughPose {
   return {
     earRotationDeg: track(BODY_ROTATION, tMs - FOLLOW_DELAY_MS.ears),
@@ -185,6 +196,17 @@ export function createDelayedSignal(historyMs = 1000): DelayedSignal {
 }
 
 export const CLICK_REACTION_DURATION_MS = 450
+export const EVENT_REACTION_DURATION_MS = 650
+
+export function eventReactionPose(sinceEventMs: number, intensity = 1): ClickReactionPose {
+  const progress = Math.min(1, Math.max(0, sinceEventMs / EVENT_REACTION_DURATION_MS))
+  const pulse = Math.sin(progress * Math.PI) * Math.min(1, Math.max(0, intensity))
+  return {
+    bodyScale: 1 + pulse * 0.05,
+    earPerk: pulse,
+    eyeScaleY: 1 + pulse * 0.08,
+  }
+}
 
 export function clickReactionPose(sinceClickMs: number): ClickReactionPose {
   const progress = Math.min(1, Math.max(0, sinceClickMs / CLICK_REACTION_DURATION_MS))

@@ -3,13 +3,16 @@ import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 import {
   CLICK_REACTION_DURATION_MS,
+  EVENT_REACTION_DURATION_MS,
   FOLLOW_DELAY_MS,
   IDLE_LIFE_DURATION_MS,
   NEUTRAL_POSE,
   clickReactionPose,
   createSeededRandom,
   earTwitchSchedule,
+  eventReactionPose,
   followThroughPose,
+  groundedLifePose,
   idleLifePose,
 } from './fatcat-motion'
 
@@ -23,28 +26,30 @@ function sample(step = 10) {
 }
 
 describe('FatCat idle life loop', () => {
-  it('runs for a calm 2.4 to 3.2 second cycle', () => {
-    expect(IDLE_LIFE_DURATION_MS).toBeGreaterThanOrEqual(2400)
-    expect(IDLE_LIFE_DURATION_MS).toBeLessThanOrEqual(3200)
+  it('keeps the whole body neutral while grounded', () => {
+    for (const t of [0, 500, 1200, 2400, 5000, 12000]) {
+      const pose = groundedLifePose(t)
+      expect(pose.bodyScale).toBe(1)
+      expect(pose.eyeScaleX).toBe(1)
+      expect(pose.eyeScaleY).toBe(1)
+    }
   })
 
-  it('crouches in anticipation, expands quickly, then settles', () => {
-    const poses = sample()
-    const scales = poses.map((p) => p.pose.bodyScale)
-    const crouch = Math.min(...scales)
-    const peak = Math.max(...scales)
-    expect(crouch).toBeLessThanOrEqual(0.8)
-    expect(peak).toBeGreaterThanOrEqual(1.05)
-    expect(peak).toBeLessThanOrEqual(1.12)
-    const crouchAt = poses.find((p) => p.pose.bodyScale === crouch)!.t
-    const peakAt = poses.find((p) => p.pose.bodyScale === peak)!.t
-    expect(crouchAt).toBeLessThan(peakAt)
-    const settled = idleLifePose(IDLE_LIFE_DURATION_MS - 200)
-    expect(settled.bodyScale).toBeCloseTo(1, 2)
+  it('allows grounded attention without resizing the body', () => {
+    const early = groundedLifePose(700)
+    expect(Math.abs(early.eyeRotationDeg)).toBeGreaterThan(0)
+    expect(early.bodyScale).toBe(1)
+  })
+
+  it('creates a bounded event reaction that settles to neutral', () => {
+    expect(eventReactionPose(100, 1).bodyScale).toBeGreaterThan(1)
+    expect(eventReactionPose(EVENT_REACTION_DURATION_MS, 1).bodyScale).toBeCloseTo(1, 3)
+    expect(eventReactionPose(EVENT_REACTION_DURATION_MS, 1).earPerk).toBeCloseTo(0, 3)
   })
 
   it('keeps the body circular by only ever scaling uniformly', () => {
-    for (const { pose } of sample()) {
+    for (const t of [0, 500, 1200, 2400, 5000]) {
+      const pose = groundedLifePose(t)
       expect(typeof pose.bodyScale).toBe('number')
       expect('bodyScaleX' in pose).toBe(false)
       expect('bodyScaleY' in pose).toBe(false)
@@ -52,13 +57,9 @@ describe('FatCat idle life loop', () => {
   })
 
   it('enlarges the eyes vertically more than horizontally', () => {
-    const poses = sample()
-    const maxHeight = Math.max(...poses.map((p) => p.pose.eyeScaleY))
-    const maxWidth = Math.max(...poses.map((p) => p.pose.eyeScaleX))
-    expect(maxHeight).toBeGreaterThanOrEqual(1.1)
-    expect(maxHeight).toBeLessThanOrEqual(1.2)
-    expect(maxWidth).toBeGreaterThanOrEqual(1.02)
-    expect(maxWidth).toBeLessThan(maxHeight)
+    const reaction = eventReactionPose(325)
+    expect(reaction.eyeScaleY).toBeGreaterThan(1)
+    expect(reaction.bodyScale).toBeGreaterThan(1)
   })
 
   it('leans the eyes left then sweeps through the right diagonal before settling upright', () => {
@@ -80,21 +81,21 @@ describe('FatCat idle life loop', () => {
   })
 
   it('loops seamlessly', () => {
-    const first = idleLifePose(0)
-    const last = idleLifePose(IDLE_LIFE_DURATION_MS)
-    const nearEnd = idleLifePose(IDLE_LIFE_DURATION_MS - 1)
+    const first = groundedLifePose(0)
+    const last = groundedLifePose(IDLE_LIFE_DURATION_MS)
+    const nearEnd = groundedLifePose(IDLE_LIFE_DURATION_MS - 1)
     expect(last).toEqual(first)
     expect(nearEnd.bodyScale).toBeCloseTo(first.bodyScale, 2)
     expect(nearEnd.eyeRotationDeg).toBeCloseTo(first.eyeRotationDeg, 1)
   })
 
   it('is not a mechanical timer: motion eases rather than stepping', () => {
-    const poses = sample(10)
+    const poses = [0, 10, 20, 30].map((t) => eventReactionPose(t))
     let maxJump = 0
     for (let i = 1; i < poses.length; i += 1) {
-      maxJump = Math.max(maxJump, Math.abs(poses[i].pose.bodyScale - poses[i - 1].pose.bodyScale))
+      maxJump = Math.max(maxJump, Math.abs(poses[i].bodyScale - poses[i - 1].bodyScale))
     }
-    expect(maxJump).toBeLessThan(0.03)
+    expect(maxJump).toBeLessThan(0.01)
   })
 })
 
