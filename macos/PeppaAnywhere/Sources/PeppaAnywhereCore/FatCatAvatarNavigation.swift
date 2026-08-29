@@ -18,5 +18,12 @@ public enum FatCatAvatarBridge {
               let value = String(data: encoded, encoding: .utf8) else { return nil }
         return "window.fatCatAvatar?.setAnimation(\(value));"
     }
+
+    public static func setFlightJavaScript(phase: String, tiltDegrees: Double, durationMs: Double) -> String? {
+        guard let encoded = try? JSONEncoder().encode(phase),
+              let value = String(data: encoded, encoding: .utf8),
+              tiltDegrees.isFinite, durationMs.isFinite else { return nil }
+        return "window.fatCatAvatar?.setFlight(\(value), \(tiltDegrees), \(durationMs));"
+    }
 }
 

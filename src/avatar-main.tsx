@@ -5,11 +5,14 @@ import type { AnimationKey, AvatarDefinition } from '@bible-strong/avatar-core'
 import bundledDefinition from '../public/strobi.avatar.json'
 import {
   CLICK_REACTION_DURATION_MS,
+  FOLLOW_DELAY_MS,
   NEUTRAL_FOLLOW,
   NEUTRAL_POSE,
   clickReactionPose,
+  createDelayedSignal,
   earTwitchRotation,
   earTwitchSchedule,
+  flightTiltAt,
   followThroughPose,
   idleLifePose,
 } from './lib/fatcat-motion'
@@ -17,9 +20,14 @@ import './avatar-styles.css'
 
 const animationKeys = new Set(Object.keys(bundledDefinition.animations))
 
+type FlightPhase = 'grounded' | 'preparing' | 'flying' | 'landing' | 'settling'
+
+const flightPhases = new Set<FlightPhase>(['grounded', 'preparing', 'flying', 'landing', 'settling'])
+
 type AvatarBridgeWindow = Window & {
   fatCatAvatar?: {
     setAnimation: (animation: string) => void
+    setFlight: (phase: string, tiltDeg?: number, durationMs?: number) => void
   }
 }
 
@@ -34,15 +42,40 @@ const EAR_TWITCH_SEED = 0xfa7ca7
 const earTwitches = earTwitchSchedule(EAR_TWITCH_SEED, 40)
 const earTwitchWindowMs = earTwitches[earTwitches.length - 1] + 4000
 
+const TAIL_TIP_FLIGHT_OVERSHOOT = 1.12
+
 function FatCatAvatarSurface() {
   const [animation, setAnimation] = useState('idle')
+  const [flightPhase, setFlightPhase] = useState<FlightPhase>('grounded')
   const safeAnimation = animationKeys.has(animation) ? animation : 'idle'
   const frameRef = useRef<HTMLDivElement | null>(null)
   const clickedAtRef = useRef(Number.NEGATIVE_INFINITY)
+  const flightRef = useRef({
+    phase: 'grounded' as FlightPhase,
+    changedAt: Number.NEGATIVE_INFINITY,
+    flyingStartedAt: Number.NEGATIVE_INFINITY,
+    maxTiltDeg: 0,
+    durationMs: 0,
+  })
+  const tiltHistoryRef = useRef(createDelayedSignal())
 
   useEffect(() => {
     const bridgeWindow = window as AvatarBridgeWindow
-    bridgeWindow.fatCatAvatar = { setAnimation }
+    bridgeWindow.fatCatAvatar = {
+      setAnimation,
+      setFlight: (phase, tiltDeg = 0, durationMs = 0) => {
+        if (!flightPhases.has(phase as FlightPhase)) return
+        const flight = flightRef.current
+        flight.phase = phase as FlightPhase
+        flight.changedAt = performance.now()
+        if (phase === 'flying') {
+          flight.flyingStartedAt = flight.changedAt
+          flight.maxTiltDeg = tiltDeg
+          flight.durationMs = durationMs
+        }
+        setFlightPhase(phase as FlightPhase)
+      },
+    }
     notifyNative('ready')
     return () => {
       delete bridgeWindow.fatCatAvatar
@@ -59,40 +92,69 @@ function FatCatAvatarSurface() {
     let request = 0
 
     const apply = (now: number) => {
+      const flight = flightRef.current
+      const flightActive = flight.phase !== 'grounded'
       const elapsed = now - origin
       let pose = NEUTRAL_POSE
       let follow = NEUTRAL_FOLLOW
       let twitch = 0
       let earPerk = 0
-      if (!reduceMotion.matches && isIdle) {
+      if (!reduceMotion.matches && isIdle && !flightActive) {
         pose = idleLifePose(elapsed)
         follow = followThroughPose(elapsed)
         twitch = earTwitchRotation(elapsed % earTwitchWindowMs, earTwitches)
       }
       let bodyScale = pose.bodyScale
       let eyeScaleY = pose.eyeScaleY
+      let tailScale = follow.tailScale
+
+      let tilt = 0
+      if (!reduceMotion.matches && flightActive) {
+        const sincePhase = now - flight.changedAt
+        if (flight.phase === 'preparing') {
+          const crouch = Math.min(1, sincePhase / 140)
+          bodyScale *= 1 - 0.06 * crouch
+          eyeScaleY *= 1 + 0.06 * crouch
+          earPerk = Math.max(earPerk, 0.6 * crouch)
+          tailScale *= 1 - 0.08 * crouch
+        }
+        if (flight.phase === 'flying' || flight.phase === 'landing') {
+          tilt = flightTiltAt(now - flight.flyingStartedAt, flight.durationMs, flight.maxTiltDeg)
+        }
+        if (flight.phase === 'settling') {
+          const pulse = Math.sin(Math.min(1, sincePhase / 320) * Math.PI)
+          bodyScale *= 1 + 0.04 * pulse
+        }
+      }
+      const history = tiltHistoryRef.current
+      history.push(now, tilt)
+      const earFlightTilt = history.sampleAt(now - FOLLOW_DELAY_MS.ears)
+      const tailBaseFlight = history.sampleAt(now - FOLLOW_DELAY_MS.tailBase)
+      const tailMidFlight = history.sampleAt(now - FOLLOW_DELAY_MS.tailMid)
+      const tailTipFlight = history.sampleAt(now - FOLLOW_DELAY_MS.tailTip) * TAIL_TIP_FLIGHT_OVERSHOOT
+
       const sinceClick = now - clickedAtRef.current
       if (!reduceMotion.matches && sinceClick >= 0 && sinceClick < CLICK_REACTION_DURATION_MS) {
         const reaction = clickReactionPose(sinceClick)
         bodyScale *= reaction.bodyScale
         eyeScaleY *= reaction.eyeScaleY
-        earPerk = reaction.earPerk
+        earPerk = Math.max(earPerk, reaction.earPerk)
       }
       const style = frame.style
       style.setProperty('--fatcat-body-scale', bodyScale.toFixed(4))
-      style.setProperty('--fatcat-body-rotation', `${pose.bodyRotationDeg.toFixed(3)}deg`)
+      style.setProperty('--fatcat-body-rotation', `${(pose.bodyRotationDeg + tilt).toFixed(3)}deg`)
       style.setProperty('--fatcat-eye-scale-x', pose.eyeScaleX.toFixed(4))
       style.setProperty('--fatcat-eye-scale-y', eyeScaleY.toFixed(4))
       style.setProperty('--fatcat-eye-rotation', `${pose.eyeRotationDeg.toFixed(3)}deg`)
       style.setProperty('--fatcat-eye-offset-x', `${pose.eyeOffsetX.toFixed(3)}px`)
-      style.setProperty('--fatcat-ear-rotation', `${follow.earRotationDeg.toFixed(3)}deg`)
+      style.setProperty('--fatcat-ear-rotation', `${(follow.earRotationDeg + earFlightTilt).toFixed(3)}deg`)
       style.setProperty('--fatcat-ear-twitch', `${twitch.toFixed(3)}deg`)
       style.setProperty('--fatcat-ear-scale', follow.earScale.toFixed(4))
       style.setProperty('--fatcat-ear-perk', `${(-6 * earPerk).toFixed(3)}px`)
-      style.setProperty('--fatcat-tail-base-rotation', `${follow.tailBaseDeg.toFixed(3)}deg`)
-      style.setProperty('--fatcat-tail-mid-rotation', `${(follow.tailMidDeg - follow.tailBaseDeg).toFixed(3)}deg`)
-      style.setProperty('--fatcat-tail-tip-rotation', `${(follow.tailTipDeg - follow.tailMidDeg).toFixed(3)}deg`)
-      style.setProperty('--fatcat-tail-scale', follow.tailScale.toFixed(4))
+      style.setProperty('--fatcat-tail-base-rotation', `${(follow.tailBaseDeg + tailBaseFlight).toFixed(3)}deg`)
+      style.setProperty('--fatcat-tail-mid-rotation', `${(follow.tailMidDeg - follow.tailBaseDeg + tailMidFlight - tailBaseFlight).toFixed(3)}deg`)
+      style.setProperty('--fatcat-tail-tip-rotation', `${(follow.tailTipDeg - follow.tailMidDeg + tailTipFlight - tailMidFlight).toFixed(3)}deg`)
+      style.setProperty('--fatcat-tail-scale', tailScale.toFixed(4))
       request = requestAnimationFrame(apply)
     }
 
@@ -104,6 +166,7 @@ function FatCatAvatarSurface() {
     <main
       className="fatcat-avatar-surface"
       data-animation={safeAnimation}
+      data-flight={flightPhase}
       aria-label="FatCat avatar"
       onClick={() => {
         clickedAtRef.current = performance.now()

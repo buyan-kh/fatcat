@@ -141,6 +141,49 @@ export function earTwitchRotation(tMs: number, schedule: readonly number[]): num
   return 0
 }
 
+export function flightTiltAt(elapsedMs: number, durationMs: number, maxTiltDeg: number): number {
+  if (durationMs <= 0) return 0
+  const progress = Math.min(1, Math.max(0, elapsedMs / durationMs))
+  if (progress >= 1) return 0
+  return maxTiltDeg * Math.sin(progress * Math.PI)
+}
+
+export type DelayedSignal = {
+  push: (tMs: number, value: number) => void
+  sampleAt: (tMs: number) => number
+}
+
+/*
+ * Short rolling history of a live signal (such as the flight tilt) so ears and
+ * tail can replay it slightly in the past for follow-through.
+ */
+export function createDelayedSignal(historyMs = 1000): DelayedSignal {
+  const times: number[] = []
+  const values: number[] = []
+  return {
+    push(tMs, value) {
+      times.push(tMs)
+      values.push(value)
+      while (times.length > 1 && times[0] < tMs - historyMs) {
+        times.shift()
+        values.shift()
+      }
+    },
+    sampleAt(tMs) {
+      if (times.length === 0) return 0
+      if (tMs <= times[0]) return values[0]
+      for (let i = 1; i < times.length; i += 1) {
+        if (tMs <= times[i]) {
+          const span = times[i] - times[i - 1]
+          const mix = span <= 0 ? 1 : (tMs - times[i - 1]) / span
+          return values[i - 1] + (values[i] - values[i - 1]) * mix
+        }
+      }
+      return values[values.length - 1]
+    },
+  }
+}
+
 export const CLICK_REACTION_DURATION_MS = 450
 
 export function clickReactionPose(sinceClickMs: number): ClickReactionPose {
