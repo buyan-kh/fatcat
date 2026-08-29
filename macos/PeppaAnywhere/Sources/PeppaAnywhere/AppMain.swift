@@ -478,9 +478,6 @@ struct FatCatAvatarView: NSViewRepresentable {
         webView.navigationDelegate = context.coordinator
         webView.setValue(false, forKey: "drawsBackground")
         webView.underPageBackgroundColor = .clear
-        webView.wantsLayer = true
-        webView.layer?.isOpaque = false
-        webView.layer?.backgroundColor = NSColor.clear.cgColor
         webView.allowsMagnification = false
         webView.allowsBackForwardNavigationGestures = false
         webView.allowsLinkPreview = false
@@ -516,7 +513,12 @@ struct FatCatAvatarView: NSViewRepresentable {
         init(onClick: @escaping () -> Void) { self.onClick = onClick }
 
         func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction, decisionHandler: @escaping @MainActor @Sendable (WKNavigationActionPolicy) -> Void) {
-            decisionHandler(navigationAction.request.url?.isFileURL == true ? .allow : .cancel)
+            decisionHandler(FatCatAvatarNavigation.allows(navigationAction.request.url) ? .allow : .cancel)
+        }
+
+        func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+            isSurfaceReady = true
+            pushAnimationIfReady()
         }
 
         func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
@@ -530,9 +532,8 @@ struct FatCatAvatarView: NSViewRepresentable {
         }
 
         func pushAnimationIfReady() {
-            guard isSurfaceReady, let webView else { return }
-            guard let data = try? JSONSerialization.data(withJSONObject: animationKey), let value = String(data: data, encoding: .utf8) else { return }
-            webView.evaluateJavaScript("window.fatCatAvatar?.setAnimation(\(value));", completionHandler: nil)
+            guard isSurfaceReady, let webView, let script = FatCatAvatarBridge.setAnimationJavaScript(animationKey) else { return }
+            webView.evaluateJavaScript(script, completionHandler: nil)
         }
     }
 }

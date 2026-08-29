@@ -1,7 +1,22 @@
 import Foundation
+import PeppaAnywhereCore
 import Testing
 
 struct FatCatAvatarContractTests {
+    @Test func webViewAllowsInternalAvatarLoadsAndBlocksTheOpenWeb() {
+        #expect(FatCatAvatarNavigation.allows(URL(string: "about:blank")))
+        #expect(FatCatAvatarNavigation.allows(URL(fileURLWithPath: "/tmp/avatar.html")))
+        #expect(FatCatAvatarNavigation.allows(nil))
+        #expect(!FatCatAvatarNavigation.allows(URL(string: "https://example.com")))
+        #expect(!FatCatAvatarNavigation.allows(URL(string: "http://example.com")))
+    }
+
+    @Test func animationBridgeEncodesAStringWithoutUsingJSONObjectSerialization() {
+        #expect(FatCatAvatarBridge.setAnimationJavaScript("idle") == #"window.fatCatAvatar?.setAnimation("idle");"#)
+        #expect(FatCatAvatarBridge.setAnimationJavaScript("thinking") == #"window.fatCatAvatar?.setAnimation("thinking");"#)
+        #expect(FatCatAvatarBridge.setAnimationJavaScript(#"bad"key"#) == #"window.fatCatAvatar?.setAnimation("bad\"key");"#)
+    }
+
     @Test func productionDefinitionKeepsTheOriginalRoundGeometryAndCatalog() throws {
         let definition = try loadJSON("public/strobi.avatar.json")
         let body = try #require(definition["body"] as? [String: Any])
@@ -44,9 +59,13 @@ struct FatCatAvatarContractTests {
 
         #expect(appMain.contains("WKWebView"))
         #expect(appMain.contains("FatCatAvatar"))
+        #expect(appMain.contains("FatCatAvatarBridge.setAnimationJavaScript"))
+        #expect(!appMain.contains("JSONSerialization.data(withJSONObject: animationKey)"))
         #expect(appMain.contains("drawsBackground"))
         #expect(appMain.contains("underPageBackgroundColor = .clear"))
         #expect(appMain.contains("acceptsFirstResponder"))
+        #expect(!appMain.contains("layer?.isOpaque = false"))
+        #expect(!appMain.contains("isFileURL == true ? .allow : .cancel"))
         #expect(!appMain.contains("PeppaAvatarRenderer"))
         #expect(!appMain.contains("PeppaAvatarView"))
         #expect(!appMain.contains("SceneKit"))
