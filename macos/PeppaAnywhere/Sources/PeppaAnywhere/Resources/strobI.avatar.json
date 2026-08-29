@@ -1,7 +1,7 @@
 {
   "schema": "bible-strong/avatar-definition",
   "schemaVersion": 1,
-  "name": "Peppa",
+  "name": "FatCat",
   "body": {
     "primary": {
       "type": "sphere",
@@ -13,7 +13,7 @@
     "nodes": []
   },
   "colors": {
-    "body": "#5b7fe5",
+    "body": "#f28c38",
     "eyes": "#111316"
   },
   "expressions": {

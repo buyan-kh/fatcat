@@ -1,67 +1,66 @@
-# FatCat Internal Life Design
+# FatCat Product Design
 
 ## Decision
 
-FatCat’s face is driven by a local event-sourced creature in `PeppaAnywhereCore`, not by Hermes session state. Hermes, the user, the clock, and observation deltas are causes. Chat transcript, session resume, pending prompts, and Peppa IPC stay as they are.
+FatCat is a visual, voice-enabled, screen-aware interface for Hermes. It gives Hermes a face, eyes on the screen, and presence. It is not a second intelligence, not a Codex clone, not a browser-automation product, and not a replacement for Hermes.
 
-Approach: native overlay engine. `FatCatLife` reduces events into mood, attention, work, and an optional current task, then derives an animation key for the existing WKWebView bridge.
+Hermes already has conversation, tools, memory, skills, models, coding, and web access. FatCat adds embodiment: a transparent avatar, privacy-filtered screen context, chat as a polished Hermes ACP session, and later voice. Avatar animations are driven by real Hermes state plus local presence (idle, eyes-on-screen, inactive sleep).
 
 ## Architecture
 
-`FatCatLife` is a pure Swift value type: `(life, event, now) → life`. The app injects time. A 1-second timer in `PetWindowController` sends `tick`. Observation only emits `observationChanged` when app or window actually changes.
-
-Work from a chat turn overlays life. When the turn ends, work clears and mood/attention/task continue. Agent `idle` and `listening` are not events; they must not freeze the cat into `idle`.
-
-`PeppaState` remains a derived label for existing UI copy. `PeppaStateMachine` and its celebration tests stay. The avatar is driven by `life.animationKey`, which may use `curious` and `drowsy` in addition to the current eight work keys.
-
-## Event model
-
 ```text
-FatCatLifeEvent
-  tick
-  userClickedAvatar | userOpenedChat | userClosedChat
-  userSentMessage(requestID, conversationID)
-  userStoppedGeneration | userStartedNewChat
-  observationChanged(app, window, redacted)
-  observationPaused | observationResumed
-  hermes(FatCatHermesCause)
+                 ┌───────────────────┐
+                 │       Hermes      │
+                 │ intelligence      │
+                 │ memory            │
+                 │ tools             │
+                 │ skills            │
+                 │ models            │
+                 └─────────┬─────────┘
+                           │ ACP
+                 ┌─────────▼─────────┐
+                 │      FatCat       │
+                 │ native macOS app  │
+                 └──────┬────┬───────┘
+                        │    │
+                 screen │    │ voice
+          ┌─────────────▼┐  ┌▼─────────────┐
+          │ScreenCapture │  │STT and TTS   │
+          │Vision and AX │  │microphone    │
+          └──────────────┘  └──────────────┘
 ```
 
-Hermes causes: `streamDelta`, `thought`, `plan`, `toolCall`, `permissionRequested`, `actionSucceeded`, `actionFailed`, `verifiedSuccess`, `verifiedFailure`, `turnCompleted`, `turnFailed`, `disconnected`.
+`FatCatLife` in `PeppaAnywhereCore` is a display reducer, not an agent. It maps user, screen, clock, and Hermes causes onto an animation key for the existing WKWebView avatar. Chat transcript, Hermes sessions, pending prompts, and Peppa IPC stay as they are. Memory stays in Hermes; FatCat only displays and selects sessions.
 
-Life fields: `mood` (calm, curious, pleased, uneasy, tired), `attention` (none, user, screen(app)), `work` (none, listening, thinking, acting, asking, verifying, celebrating), `task` (optional conversationID), `observationPaused`, `asleep`, `lastCause`, `lastSalientAt`.
+## Hermes state → face
 
-## Display
-
-Work wins while a turn is active, except pause/asleep which force `sleeping`.
-
-| Condition | Animation |
+| Hermes / presence | Animation |
 | --- | --- |
-| paused or asleep | `sleeping` |
-| work listening / asking | `listening` |
-| work thinking / verifying | `thinking` |
-| work acting | `working` |
-| work celebrating | `celebrate` |
-| work none + uneasy | `suspicious` |
-| work none + curious | `curious` |
-| work none + tired (awake) | `drowsy` |
-| otherwise | `idle` |
+| Waiting | `idle` |
+| User speaking / send / permission | `listening` |
+| Reasoning | `thinking` |
+| Using a tool | `working` |
+| Searching | `searching` |
+| Uncertain | `suspicious` |
+| Failed | `suspicious` (semantic recovering; JSON has no recovering timeline) |
+| Verified | `celebrate` |
+| Inactive / observation paused | `sleeping` |
+| Active app changed, no turn | `curious` (eyes on the screen) |
 
-`verifiedSuccess` is accepted only when `work == verifying`. Celebrating auto-clears after 2 seconds to `work none` and mood `pleased`.
+`verifiedSuccess` is accepted only from `verifying`. Celebrating is not cancelled by Hermes `completed`; it clears after 2 seconds. Agent `idle` / `listening` are not events — waiting is `work == none` → `idle`, unless the cat is watching the screen or inactive.
 
-## Loops
+Search tool names (containing `search`) set `work = searching`. Other tools set `acting`.
 
-- Curiosity from a non-redacted observation change while `work == none`; fades to calm after 20 seconds.
-- No salient event for 3 minutes → tired/`drowsy`; 8 minutes → `asleep`.
-- User send → listening, attend user, remember conversation.
-- New chat clears task.
-- `turnCompleted` clears work and keeps task.
-- Redacted observation changes do not spark curiosity.
+## Screen
+
+FatCat does not constantly analyze everything. This slice emits a life event when the active app or window actually changes, and still inlines privacy-filtered app/window context into a user message. Raw screenshots are not retained. Streaming observation IPC remains unused by the agent.
+
+Later: selected text, visible errors, dialogs, OCR when useful, and observation only when the user asks about the screen, a dialog appears, a click causes a major change, Hermes needs context, or proactive observation is on.
 
 ## Out of scope
 
-Python observation consumption, native action execution, permission approval handshake, IPC schema changes, and rewriting `FatCatChatState`.
+Voice STT/TTS, Python observation consumption, native action execution, permission approval handshake, IPC schema changes, rewriting `FatCatChatState`, rebuilding Hermes memory, browser agents, coding-agent identity, computer-use benchmarks.
 
 ## Testing
 
-Swift tests in `FatCatLifeTests` cover idle default, observation curiosity, tick decay, sleep, send overlay, Hermes mapping, celebration gate, agent-idle ignored, pause override, task continuity, and new-chat clear. Existing chat, IPC, and `PeppaStateMachine` tests must keep passing.
+Swift tests in `FatCatLifeTests` cover idle default, screen curiosity, inactivity sleep, send overlay, Hermes mapping including search tools, celebration gate, ignored agent-idle, pause, task continuity, and new-chat clear. Existing chat, IPC, and `PeppaStateMachine` tests must keep passing.

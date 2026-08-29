@@ -177,4 +177,15 @@ struct FatCatLifeTests {
         #expect(life.animationKey == "listening")
         #expect(life.peppaState == .askingPermission)
     }
+
+    @Test func searchToolCallsUseTheSearchingAnimation() {
+        var life = life()
+        life.handle(.hermes(.toolCall(name: "web_search")), at: start)
+        #expect(life.work == .searching)
+        #expect(life.animationKey == "searching")
+
+        life.handle(.hermes(.toolCall(name: "read")), at: start)
+        #expect(life.work == .acting)
+        #expect(life.animationKey == "working")
+    }
 }

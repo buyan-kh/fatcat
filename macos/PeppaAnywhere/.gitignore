@@ -2,3 +2,5 @@
 Sources/PeppaAnywhere/Resources/WebApp/*
 Sources/PeppaAnywhere/Resources/*
 !Sources/PeppaAnywhere/Resources/strobI.avatar.json
+!Sources/PeppaAnywhere/Resources/FatCatAvatar/
+!Sources/PeppaAnywhere/Resources/FatCatAvatar/**

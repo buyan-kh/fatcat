@@ -1,7 +1,11 @@
 # FatCat
 
-Native macOS chat companion. FatCat uses SwiftUI/AppKit and a bundled FatCat
-Agent over a private Unix domain socket; no Electron or WKWebView is required.
+FatCat is a visual, screen-aware native macOS interface for Hermes. It gives
+Hermes a face, eyes on the screen, and presence. Chat is a polished Hermes ACP
+session; the avatar follows Hermes’s real state. FatCat is not a second
+intelligence, IDE, or browser agent.
+
+Voice is part of the product definition and is not in this build yet.
 
 ## Run
 
