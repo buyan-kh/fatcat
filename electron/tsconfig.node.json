@@ -8,6 +8,11 @@
     "skipLibCheck": true,
     "resolveJsonModule": true,
     "esModuleInterop": true,
+    "baseUrl": ".",
+    "paths": {
+      "@main/*": ["src/main/*"],
+      "@shared/*": ["src/shared/*"]
+    },
     "types": ["node", "vitest/globals"]
   },
   "include": ["electron.vite.config.ts", "vitest.config.ts", "src/main/**/*.ts", "src/preload/**/*.ts", "src/shared/**/*.ts", "src/test/**/*.ts"]

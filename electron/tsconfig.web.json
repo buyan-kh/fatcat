@@ -13,6 +13,11 @@
     "jsx": "react-jsx",
     "strict": true,
     "skipLibCheck": true,
+    "baseUrl": ".",
+    "paths": {
+      "@renderer/*": ["src/renderer/src/*"],
+      "@shared/*": ["src/shared/*"]
+    },
     "types": ["vite/client", "vitest/globals", "@testing-library/jest-dom"]
   },
   "include": ["src/renderer/src", "src/shared", "src/preload/index.d.ts"]
