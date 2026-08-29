@@ -48,6 +48,15 @@ struct NativeDomainTests {
         #expect(store.load()?.clamped(to: PanelBounds(width: 800, height: 600)) == PetPosition(x: 800, y: 0))
     }
 
+    @Test func petWindowDragFollowsTheCursorOneToOne() {
+        let next = PetPosition.dragging(
+            origin: PetPosition(x: 100, y: 200),
+            startMouse: PetPosition(x: 10, y: 20),
+            mouse: PetPosition(x: 40, y: 55)
+        )
+        #expect(next == PetPosition(x: 130, y: 235))
+    }
+
     @Test func petPanelModesAndMenusDescribeTheSmallNativeSurface() {
         #expect(PetPanelMode.petOnly.width == 220)
         #expect(PetPanelMode.petOnly.height == 220)

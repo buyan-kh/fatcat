@@ -451,14 +451,27 @@ final class PeppaAgentClient: ObservableObject {
 }
 
 private final class FatCatAvatarWebView: WKWebView {
+    private var dragMouse = NSPoint.zero
+    private var dragOrigin = NSPoint.zero
+
     override var acceptsFirstResponder: Bool { false }
+
+    override func mouseDown(with event: NSEvent) {
+        dragMouse = NSEvent.mouseLocation
+        dragOrigin = window?.frame.origin ?? .zero
+        super.mouseDown(with: event)
+    }
 
     override func mouseDragged(with event: NSEvent) {
         guard let window else { return }
-        var origin = window.frame.origin
-        origin.x += event.deltaX
-        origin.y += event.deltaY
-        window.setFrameOrigin(origin)
+        let mouse = NSEvent.mouseLocation
+        guard hypot(mouse.x - dragMouse.x, mouse.y - dragMouse.y) >= 4 else { return }
+        let next = PetPosition.dragging(
+            origin: PetPosition(x: dragOrigin.x, y: dragOrigin.y),
+            startMouse: PetPosition(x: dragMouse.x, y: dragMouse.y),
+            mouse: PetPosition(x: mouse.x, y: mouse.y)
+        )
+        window.setFrameOrigin(NSPoint(x: next.x, y: next.y))
     }
 }
 
@@ -472,6 +485,8 @@ struct FatCatAvatarView: NSViewRepresentable {
         let configuration = WKWebViewConfiguration()
         configuration.websiteDataStore = .nonPersistent()
         configuration.preferences.javaScriptCanOpenWindowsAutomatically = false
+        configuration.preferences.setValue(true, forKey: "allowFileAccessFromFileURLs")
+        configuration.setValue(true, forKey: "allowUniversalAccessFromFileURLs")
         configuration.userContentController.add(context.coordinator, name: "fatcatAvatar")
 
         let webView = FatCatAvatarWebView(frame: .zero, configuration: configuration)

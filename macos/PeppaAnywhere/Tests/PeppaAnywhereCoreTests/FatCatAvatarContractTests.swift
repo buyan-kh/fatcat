@@ -57,6 +57,8 @@ struct FatCatAvatarContractTests {
         let appMain = try loadText("macos/PeppaAnywhere/Sources/PeppaAnywhere/AppMain.swift")
         let manifest = try loadText("macos/PeppaAnywhere/Package.swift")
 
+        #expect(appMain.contains("allowFileAccessFromFileURLs"))
+        #expect(appMain.contains("allowUniversalAccessFromFileURLs"))
         #expect(appMain.contains("WKWebView"))
         #expect(appMain.contains("FatCatAvatar"))
         #expect(appMain.contains("FatCatAvatarBridge.setAnimationJavaScript"))

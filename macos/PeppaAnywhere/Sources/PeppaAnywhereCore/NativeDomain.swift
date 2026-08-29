@@ -120,6 +120,10 @@ public struct PetPosition: Codable, Equatable, Sendable {
     public func clamped(to bounds: PanelBounds) -> PetPosition {
         PetPosition(x: min(max(x, 0), max(bounds.width, 0)), y: min(max(y, 0), max(bounds.height, 0)))
     }
+
+    public static func dragging(origin: PetPosition, startMouse: PetPosition, mouse: PetPosition) -> PetPosition {
+        PetPosition(x: origin.x + mouse.x - startMouse.x, y: origin.y + mouse.y - startMouse.y)
+    }
 }
 
 public final class PetPositionStore: @unchecked Sendable {
