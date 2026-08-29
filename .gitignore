@@ -1,4 +1,7 @@
 node_modules/
+electron/node_modules/
+electron/out/
+electron/dist/
 dist/
 .build/
 .DS_Store
