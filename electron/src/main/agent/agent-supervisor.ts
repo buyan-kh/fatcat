@@ -3,16 +3,10 @@ import { access, mkdir, rm } from 'node:fs/promises'
 import { constants } from 'node:fs'
 import { dirname } from 'node:path'
 import { spawn, type ChildProcess, type SpawnOptions } from 'node:child_process'
+import type { AgentDiagnostics } from '../../shared/api'
 import { SocketTransport } from './socket-transport'
 
 type SpawnProcess = (command: string, args: readonly string[], options: SpawnOptions) => ChildProcess
-
-export type AgentDiagnostics = {
-  agentPath: string
-  socketPath: string
-  running: boolean
-  lines: string[]
-}
 
 type AgentSupervisorOptions = {
   agentPath: string

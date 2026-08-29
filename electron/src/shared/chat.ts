@@ -9,7 +9,7 @@ export type ConversationRecord = {
 }
 
 export type ChatRole = 'user' | 'assistant' | 'system'
-export type TurnState = 'sending' | 'thinking' | 'working' | 'streaming' | 'completed' | 'failed' | 'cancelled'
+export type TurnState = 'sending' | 'thinking' | 'working' | 'streaming' | 'stopping' | 'completed' | 'failed' | 'cancelled'
 
 export type TurnActivity = {
   id: string

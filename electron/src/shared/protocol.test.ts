@@ -12,6 +12,7 @@ describe('FatCat socket protocol', () => {
     { version: 1, type: 'tool_call', request_id: 'tool-1', name: 'read_file', arguments: { path: 'README.md' } },
     { version: 1, type: 'action_result', request_id: 'tool-1', success: true, detail: 'Done' },
     { version: 1, type: 'state', state: 'streaming', session_id: 's1', request_id: 'r1' },
+    { version: 1, type: 'state', state: 'stopping', session_id: 's1', request_id: 'r1' },
     { version: 1, type: 'provider_status', provider_id: 'openai-codex', authenticated: true, detail: 'Ready' },
     { version: 1, type: 'error', request_id: 'r1', message: 'Failed' },
     { version: 1, type: 'shutdown_ack' },

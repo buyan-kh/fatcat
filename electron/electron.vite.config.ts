@@ -15,7 +15,7 @@ export default defineConfig({
     resolve: { alias: { '@shared': path.join(source, 'shared') } },
   },
   renderer: {
-    root: '.',
+    root: path.join(source, 'renderer'),
     resolve: {
       alias: {
         '@renderer': path.join(source, 'renderer/src'),
