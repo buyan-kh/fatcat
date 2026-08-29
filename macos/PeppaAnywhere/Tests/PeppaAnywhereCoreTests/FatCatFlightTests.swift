@@ -286,6 +286,26 @@ struct FatCatFlightTests {
         #expect(FatCatFlightPolicy.evaluate(reason: .idleReposition, context: context) == .blocked(.userActive))
     }
 
+    @Test func salientEventsMapToExplicitPresenceCues() {
+        #expect(FatCatFlightEventPolicy.cue(for: .userClickedAvatar) == FatCatEventCue(reaction: .perk, flightReason: nil))
+        #expect(FatCatFlightEventPolicy.cue(for: .userClosedChat) == FatCatEventCue(reaction: .attention, flightReason: .returnAfterChatClosed))
+        #expect(FatCatFlightEventPolicy.cue(for: .hermes(.thought)) == FatCatEventCue(reaction: .attention, flightReason: nil))
+        #expect(FatCatFlightEventPolicy.cue(for: .hermes(.toolCall(name: "search"))) == FatCatEventCue(reaction: .perk, flightReason: .stayNearActiveWork))
+        #expect(FatCatFlightEventPolicy.cue(for: .hermes(.permissionRequested)) == FatCatEventCue(reaction: .perk, flightReason: .makeRoomForNotification))
+        #expect(FatCatFlightEventPolicy.cue(for: .hermes(.verifiedSuccess)) == FatCatEventCue(reaction: .celebrate, flightReason: .verifiedSuccess))
+        #expect(FatCatFlightEventPolicy.cue(for: .hermes(.turnFailed)) == FatCatEventCue(reaction: .recoil, flightReason: nil))
+        #expect(FatCatFlightEventPolicy.cue(for: .observationChanged(app: "Xcode", window: nil, redacted: false)) == FatCatEventCue(reaction: .attention, flightReason: nil))
+        #expect(FatCatFlightEventPolicy.cue(for: .tick) == nil)
+    }
+
+    @Test func pendingFlightCueKeepsOnlyTheMostRecentSalientReason() {
+        var queue = FatCatFlightCueQueue()
+        queue.enqueue(.stayNearActiveWork)
+        queue.enqueue(.verifiedSuccess)
+        #expect(queue.take() == .verifiedSuccess)
+        #expect(queue.take() == nil)
+    }
+
     @Test func onlyCalmLifeStatesAllowAutonomousFlight() {
         #expect(FatCatFlightPolicy.allowsAutonomousFlight(for: .idle))
         #expect(FatCatFlightPolicy.allowsAutonomousFlight(for: .celebrating))

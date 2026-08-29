@@ -91,6 +91,66 @@ public enum FatCatFlightReason: String, CaseIterable, Codable, Equatable, Sendab
     case stayNearActiveWork
 }
 
+public enum FatCatReaction: String, Equatable, Sendable {
+    case attention
+    case perk
+    case recoil
+    case celebrate
+}
+
+public struct FatCatEventCue: Equatable, Sendable {
+    public let reaction: FatCatReaction
+    public let flightReason: FatCatFlightReason?
+
+    public init(reaction: FatCatReaction, flightReason: FatCatFlightReason?) {
+        self.reaction = reaction
+        self.flightReason = flightReason
+    }
+}
+
+public enum FatCatFlightEventPolicy {
+    public static func cue(for event: FatCatLifeEvent) -> FatCatEventCue? {
+        switch event {
+        case .userClickedAvatar:
+            return FatCatEventCue(reaction: .perk, flightReason: nil)
+        case .userClosedChat:
+            return FatCatEventCue(reaction: .attention, flightReason: .returnAfterChatClosed)
+        case .observationChanged:
+            return FatCatEventCue(reaction: .attention, flightReason: nil)
+        case .hermes(.streamDelta), .hermes(.thought), .hermes(.plan):
+            return FatCatEventCue(reaction: .attention, flightReason: nil)
+        case .hermes(.toolCall):
+            return FatCatEventCue(reaction: .perk, flightReason: .stayNearActiveWork)
+        case .hermes(.permissionRequested):
+            return FatCatEventCue(reaction: .perk, flightReason: .makeRoomForNotification)
+        case .hermes(.verifiedSuccess):
+            return FatCatEventCue(reaction: .celebrate, flightReason: .verifiedSuccess)
+        case .hermes(.actionFailed), .hermes(.verifiedFailure), .hermes(.turnFailed), .hermes(.disconnected):
+            return FatCatEventCue(reaction: .recoil, flightReason: nil)
+        case .tick, .userOpenedChat, .userSentMessage, .userStoppedGeneration, .userStartedNewChat,
+             .observationPaused, .observationResumed, .hermes(.actionSucceeded), .hermes(.turnCompleted):
+            return nil
+        }
+    }
+}
+
+public struct FatCatFlightCueQueue: Equatable, Sendable {
+    private var pending: FatCatFlightReason?
+
+    public init() {}
+
+    public var pendingReason: FatCatFlightReason? { pending }
+
+    public mutating func enqueue(_ reason: FatCatFlightReason) {
+        pending = reason
+    }
+
+    public mutating func take() -> FatCatFlightReason? {
+        defer { pending = nil }
+        return pending
+    }
+}
+
 public struct FatCatFlightContext: Equatable, Sendable {
     public var isTyping = false
     public var isDraggingPet = false
