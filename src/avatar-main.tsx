@@ -13,7 +13,7 @@ type AvatarBridgeWindow = Window & {
   }
 }
 
-function notifyNative(type: 'click' | 'context-menu') {
+function notifyNative(type: 'ready' | 'click' | 'context-menu') {
   const handler = (window as Window & {
     webkit?: { messageHandlers?: { fatcatAvatar?: { postMessage: (message: unknown) => void } } }
   }).webkit?.messageHandlers?.fatcatAvatar
@@ -27,6 +27,7 @@ function FatCatAvatarSurface() {
   useEffect(() => {
     const bridgeWindow = window as AvatarBridgeWindow
     bridgeWindow.fatCatAvatar = { setAnimation }
+    notifyNative('ready')
     return () => {
       delete bridgeWindow.fatCatAvatar
     }

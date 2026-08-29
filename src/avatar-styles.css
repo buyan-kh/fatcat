@@ -22,6 +22,8 @@ body {
   overflow: visible;
   background: transparent;
   cursor: grab;
+  user-select: none;
+  -webkit-user-select: none;
 }
 
 .fatcat-avatar-surface:active {

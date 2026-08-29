@@ -5,6 +5,7 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 NATIVE_ROOT="$REPO_ROOT/macos/PeppaAnywhere"
 APP_BUNDLE="$NATIVE_ROOT/.build/FatCat.app"
+npm --prefix "$REPO_ROOT" run build:avatar
 swift build --configuration release --package-path "$NATIVE_ROOT"
 BIN_DIR="$(swift build --configuration release --package-path "$NATIVE_ROOT" --show-bin-path)"
 

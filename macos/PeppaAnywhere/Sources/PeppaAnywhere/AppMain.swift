@@ -450,6 +450,18 @@ final class PeppaAgentClient: ObservableObject {
     }
 }
 
+private final class FatCatAvatarWebView: WKWebView {
+    override var acceptsFirstResponder: Bool { false }
+
+    override func mouseDragged(with event: NSEvent) {
+        guard let window else { return }
+        var origin = window.frame.origin
+        origin.x += event.deltaX
+        origin.y += event.deltaY
+        window.setFrameOrigin(origin)
+    }
+}
+
 struct FatCatAvatarView: NSViewRepresentable {
     let animationKey: String
     let onClick: () -> Void
@@ -458,15 +470,21 @@ struct FatCatAvatarView: NSViewRepresentable {
 
     func makeNSView(context: Context) -> WKWebView {
         let configuration = WKWebViewConfiguration()
+        configuration.websiteDataStore = .nonPersistent()
         configuration.preferences.javaScriptCanOpenWindowsAutomatically = false
         configuration.userContentController.add(context.coordinator, name: "fatcatAvatar")
 
-        let webView = WKWebView(frame: .zero, configuration: configuration)
+        let webView = FatCatAvatarWebView(frame: .zero, configuration: configuration)
         webView.navigationDelegate = context.coordinator
         webView.setValue(false, forKey: "drawsBackground")
         webView.underPageBackgroundColor = .clear
+        webView.wantsLayer = true
+        webView.layer?.isOpaque = false
+        webView.layer?.backgroundColor = NSColor.clear.cgColor
         webView.allowsMagnification = false
         webView.allowsBackForwardNavigationGestures = false
+        webView.allowsLinkPreview = false
+        if #available(macOS 13.3, *) { webView.isInspectable = false }
 
         guard let avatarURL = Bundle.module.url(forResource: "avatar", withExtension: "html", subdirectory: "FatCatAvatar") else {
             assertionFailure("FatCat avatar surface is missing from the app bundle")
@@ -485,26 +503,34 @@ struct FatCatAvatarView: NSViewRepresentable {
         context.coordinator.pushAnimationIfReady()
     }
 
+    static func dismantleNSView(_ nsView: WKWebView, coordinator: Coordinator) {
+        nsView.configuration.userContentController.removeScriptMessageHandler(forName: "fatcatAvatar")
+    }
+
     final class Coordinator: NSObject, WKNavigationDelegate, WKScriptMessageHandler {
         weak var webView: WKWebView?
         var animationKey = "idle"
         var onClick: () -> Void
-        private var didFinishLoading = false
+        private var isSurfaceReady = false
 
         init(onClick: @escaping () -> Void) { self.onClick = onClick }
 
-        func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
-            didFinishLoading = true
-            pushAnimationIfReady()
+        func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction, decisionHandler: @escaping @MainActor @Sendable (WKNavigationActionPolicy) -> Void) {
+            decisionHandler(navigationAction.request.url?.isFileURL == true ? .allow : .cancel)
         }
 
         func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
-            guard message.name == "fatcatAvatar", let body = message.body as? [String: Any], body["type"] as? String == "click" else { return }
-            onClick()
+            guard message.name == "fatcatAvatar", let body = message.body as? [String: Any], let type = body["type"] as? String else { return }
+            if type == "ready" {
+                isSurfaceReady = true
+                pushAnimationIfReady()
+            } else if type == "click" {
+                onClick()
+            }
         }
 
         func pushAnimationIfReady() {
-            guard didFinishLoading, let webView else { return }
+            guard isSurfaceReady, let webView else { return }
             guard let data = try? JSONSerialization.data(withJSONObject: animationKey), let value = String(data: data, encoding: .utf8) else { return }
             webView.evaluateJavaScript("window.fatCatAvatar?.setAnimation(\(value));", completionHandler: nil)
         }
@@ -1534,12 +1560,4 @@ struct PeppaAnywhereApp: App {
     }
 
     var body: some Scene { Settings { SettingsLandingView() } }
-}
-
-private extension Color {
-    init(hex: String) {
-        let cleaned = hex.replacingOccurrences(of: "#", with: "")
-        let value = UInt64(cleaned, radix: 16) ?? 0x5b7fe5
-        self.init(red: Double((value >> 16) & 0xff) / 255, green: Double((value >> 8) & 0xff) / 255, blue: Double(value & 0xff) / 255)
-    }
 }
