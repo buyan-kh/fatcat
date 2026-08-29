@@ -15,6 +15,54 @@ class MissingProviderAgentSession(PeppaAgentSession):
 
 
 class ServerTests(unittest.IsolatedAsyncioTestCase):
+    async def test_provider_control_messages_delegate_to_hermes_bridge(self):
+        class FakeBridge:
+            def inventory(self):
+                return [{"slug": "openai-codex", "status": "connected"}]
+
+            def models(self, provider, *, force_refresh=False):
+                return [provider, "gpt-5"]
+
+            def set_default(self, provider, model):
+                return {"provider": provider, "model": model}
+
+            def set_credential_ref(self, provider, credential_ref):
+                return {"provider": provider, "credential_ref": credential_ref}
+
+            def validate(self, provider, model):
+                return {"provider": provider, "model": model, "usable": True, "detail": "ok"}
+
+        server = PeppaAgentServer(Path("/tmp/peppa-test.sock"), Path("/tmp/peppa-test-home"), config_bridge=FakeBridge())
+
+        inventory = await server.handle_message({"version": 1, "type": "provider_inventory", "request_id": "r1"}, lambda event: None)
+        models = await server.handle_message({"version": 1, "type": "provider_models", "request_id": "r2", "provider_id": "openai-codex", "refresh": True}, lambda event: None)
+        selected = await server.handle_message({"version": 1, "type": "provider_set_default", "request_id": "r3", "provider_id": "openai-codex", "model": "gpt-5"}, lambda event: None)
+        credential = await server.handle_message({"version": 1, "type": "provider_set_credential_ref", "request_id": "r4", "provider_id": "openai-api", "credential_ref": "fatcat-key:openai-api"}, lambda event: None)
+        validation = await server.handle_message({"version": 1, "type": "provider_validate", "request_id": "r5", "provider_id": "openai-codex", "model": "gpt-5"}, lambda event: None)
+
+        self.assertEqual(inventory, {"version": 1, "type": "provider_inventory_result", "request_id": "r1", "providers": [{"slug": "openai-codex", "status": "connected"}]})
+        self.assertEqual(models, {"version": 1, "type": "provider_models_result", "request_id": "r2", "provider_id": "openai-codex", "models": ["openai-codex", "gpt-5"]})
+        self.assertEqual(selected, {"version": 1, "type": "provider_configured", "request_id": "r3", "operation": "default", "provider": "openai-codex", "model": "gpt-5"})
+        self.assertEqual(credential, {"version": 1, "type": "provider_configured", "request_id": "r4", "operation": "credential_ref", "provider": "openai-api", "credential_ref": "fatcat-key:openai-api"})
+        self.assertEqual(validation, {"version": 1, "type": "provider_validation_result", "request_id": "r5", "provider": "openai-codex", "model": "gpt-5", "usable": True, "detail": "ok"})
+
+    async def test_provider_control_errors_are_safe_and_never_echo_credentials(self):
+        class FailingBridge:
+            def set_credential_ref(self, provider, credential_ref):
+                raise ValueError("secret value must not be sent")
+
+        server = PeppaAgentServer(Path("/tmp/peppa-test.sock"), Path("/tmp/peppa-test-home"), config_bridge=FailingBridge())
+        with self.assertLogs("peppa_agent", level="ERROR") as logs:
+            response = await server.handle_message(
+                {"version": 1, "type": "provider_set_credential_ref", "request_id": "r1", "provider_id": "openai-api", "credential_ref": "fatcat-key:openai-api"},
+                lambda event: None,
+            )
+
+        self.assertEqual(response["type"], "error")
+        self.assertNotIn("secret value", response["message"])
+        self.assertNotIn("fatcat-key", response["message"])
+        self.assertNotIn("secret value", "\n".join(logs.output))
+
     async def test_shutdown_ack_requests_server_shutdown(self):
         server = PeppaAgentServer(Path("/tmp/peppa-test.sock"), Path("/tmp/peppa-test-home"))
         server.shutdown_event = asyncio.Event()

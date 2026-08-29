@@ -242,12 +242,13 @@ class _FatCatACPBridge:
 
 
 class PeppaAgentServer:
-    def __init__(self, socket_path: Path, hermes_home: Path):
+    def __init__(self, socket_path: Path, hermes_home: Path, config_bridge=None):
         self.socket_path = socket_path
         self.hermes_home = hermes_home
         self.sessions: dict[str, PeppaAgentSession] = {}
         self.session_manager = None
         self.acp_agent = None
+        self.config_bridge = config_bridge
         self.loop: asyncio.AbstractEventLoop | None = None
         self.active_writer: asyncio.StreamWriter | None = None
         self.shutdown_event: asyncio.Event | None = None
@@ -397,6 +398,14 @@ class PeppaAgentServer:
             except Exception:
                 LOG.debug("Hermes cancellation interrupt was unavailable", exc_info=True)
             return _event("state", state="stopping", session_id=session_id, request_id=str(message.get("request_id") or uuid.uuid4()))
+        if message_type in {
+            "provider_inventory",
+            "provider_models",
+            "provider_set_default",
+            "provider_set_credential_ref",
+            "provider_validate",
+        }:
+            return self._handle_provider_message(message)
         if message_type == "observation":
             return None
         if message_type == "shutdown":
@@ -419,6 +428,43 @@ class PeppaAgentServer:
             self.sessions[session_id] = session
         asyncio.create_task(session.prompt(request_id, str(message.get("text") or "")))
         return _event("state", state="thinking", session_id=session_id, request_id=request_id)
+
+    def _handle_provider_message(self, message: dict[str, Any]) -> dict[str, Any]:
+        request_id = str(message.get("request_id") or uuid.uuid4())
+        try:
+            bridge = self._require_config_bridge()
+            message_type = message["type"]
+            if message_type == "provider_inventory":
+                return _event("provider_inventory_result", request_id=request_id, providers=bridge.inventory())
+            provider = self._required_text(message, "provider_id")
+            if message_type == "provider_models":
+                models = bridge.models(provider, force_refresh=bool(message.get("refresh", False)))
+                return _event("provider_models_result", request_id=request_id, provider_id=provider, models=models)
+            if message_type == "provider_set_default":
+                result = bridge.set_default(provider, self._required_text(message, "model"))
+                return _event("provider_configured", request_id=request_id, operation="default", **result)
+            if message_type == "provider_set_credential_ref":
+                result = bridge.set_credential_ref(provider, self._required_text(message, "credential_ref"))
+                return _event("provider_configured", request_id=request_id, operation="credential_ref", **result)
+            result = bridge.validate(provider, self._required_text(message, "model"))
+            return _event("provider_validation_result", request_id=request_id, **result)
+        except Exception:
+            LOG.error("Hermes provider control operation failed")
+            return _event("error", request_id=request_id, message="Provider setup operation failed.")
+
+    def _require_config_bridge(self):
+        if self.config_bridge is None:
+            from peppa_agent.config_bridge import ConfigBridge
+
+            self.config_bridge = ConfigBridge.live()
+        return self.config_bridge
+
+    @staticmethod
+    def _required_text(message: dict[str, Any], key: str) -> str:
+        value = message.get(key)
+        if not isinstance(value, str) or not value.strip():
+            raise ValueError(f"{key} is required")
+        return value.strip()
 
     def _require_session_manager(self):
         if self.session_manager is None:
