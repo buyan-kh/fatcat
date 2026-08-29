@@ -53,6 +53,12 @@ describe('FatCat flight surface contract', () => {
     expect(avatarMain).toContain('data-flight')
   })
 
+  it('exposes an event reaction bridge and uses neutral grounded motion', () => {
+    expect(avatarMain).toContain('setReaction')
+    expect(avatarMain).toContain('groundedLifePose')
+    expect(avatarMain).not.toContain('pose = idleLifePose(elapsed)')
+  })
+
   it('keeps window movement out of the web surface: the page only tilts and poses', () => {
     expect(avatarMain).not.toContain('window.moveTo')
     expect(avatarMain).not.toContain('window.moveBy')

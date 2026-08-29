@@ -25,5 +25,9 @@ public enum FatCatAvatarBridge {
               tiltDegrees.isFinite, durationMs.isFinite else { return nil }
         return "window.fatCatAvatar?.setFlight(\(value), \(tiltDegrees), \(durationMs));"
     }
-}
 
+    public static func setReactionJavaScript(intensity: Double, durationMs: Double) -> String? {
+        guard intensity.isFinite, durationMs.isFinite, durationMs > 0 else { return nil }
+        return "window.fatCatAvatar?.setReaction(\(intensity), \(durationMs));"
+    }
+}

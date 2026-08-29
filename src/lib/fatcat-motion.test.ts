@@ -188,7 +188,8 @@ describe('FatCat motion surface contract', () => {
   })
 
   it('drives the life loop from the web surface without cursor tracking', () => {
-    expect(avatarMain).toContain('idleLifePose')
+    expect(avatarMain).toContain('groundedLifePose')
+    expect(avatarMain).not.toContain('pose = idleLifePose(elapsed)')
     expect(avatarMain).not.toContain('mousemove')
     expect(avatarMain).not.toContain('pointermove')
   })

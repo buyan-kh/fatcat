@@ -8,17 +8,16 @@ import {
   earFollowRotationDelta,
 } from './lib/fatcat-attachment'
 import {
-  CLICK_REACTION_DURATION_MS,
   FOLLOW_DELAY_MS,
   NEUTRAL_FOLLOW,
   NEUTRAL_POSE,
-  clickReactionPose,
   createDelayedSignal,
   earTwitchRotation,
   earTwitchSchedule,
+  eventReactionPose,
   flightTiltAt,
   followThroughPose,
-  idleLifePose,
+  groundedLifePose,
 } from './lib/fatcat-motion'
 import './avatar-styles.css'
 
@@ -32,6 +31,7 @@ type AvatarBridgeWindow = Window & {
   fatCatAvatar?: {
     setAnimation: (animation: string) => void
     setFlight: (phase: string, tiltDeg?: number, durationMs?: number) => void
+    setReaction: (intensity?: number, durationMs?: number) => void
   }
 }
 
@@ -53,12 +53,16 @@ function FatCatAvatarSurface() {
   const [flightPhase, setFlightPhase] = useState<FlightPhase>('grounded')
   const safeAnimation = animationKeys.has(animation) ? animation : 'idle'
   const frameRef = useRef<HTMLDivElement | null>(null)
-  const clickedAtRef = useRef(Number.NEGATIVE_INFINITY)
   const flightRef = useRef({
     phase: 'grounded' as FlightPhase,
     changedAt: Number.NEGATIVE_INFINITY,
     flyingStartedAt: Number.NEGATIVE_INFINITY,
     maxTiltDeg: 0,
+    durationMs: 0,
+  })
+  const reactionRef = useRef({
+    startedAt: Number.NEGATIVE_INFINITY,
+    intensity: 0,
     durationMs: 0,
   })
   const tiltHistoryRef = useRef(createDelayedSignal())
@@ -78,6 +82,10 @@ function FatCatAvatarSurface() {
           flight.durationMs = durationMs
         }
         setFlightPhase(phase as FlightPhase)
+      },
+      setReaction: (intensity = 1, durationMs = 650) => {
+        if (!Number.isFinite(intensity) || !Number.isFinite(durationMs) || durationMs <= 0) return
+        reactionRef.current = { startedAt: performance.now(), intensity, durationMs }
       },
     }
     notifyNative('ready')
@@ -104,12 +112,17 @@ function FatCatAvatarSurface() {
       let twitch = 0
       let earPerk = 0
       if (!reduceMotion.matches && isIdle && !flightActive) {
-        pose = idleLifePose(elapsed)
+        pose = groundedLifePose(elapsed)
         follow = followThroughPose(elapsed)
         twitch = earTwitchRotation(elapsed % earTwitchWindowMs, earTwitches)
       }
-      let bodyScale = pose.bodyScale
-      let eyeScaleY = pose.eyeScaleY
+      const reactionState = reactionRef.current
+      const reactionElapsed = now - reactionState.startedAt
+      const reaction = !reduceMotion.matches && reactionElapsed >= 0 && reactionElapsed < reactionState.durationMs
+        ? eventReactionPose(reactionElapsed, reactionState.intensity)
+        : { bodyScale: 1, earPerk: 0, eyeScaleY: 1 }
+      let bodyScale = pose.bodyScale * reaction.bodyScale
+      let eyeScaleY = pose.eyeScaleY * reaction.eyeScaleY
       let tailScale = follow.tailScale
 
       let tilt = 0
@@ -119,7 +132,7 @@ function FatCatAvatarSurface() {
           const crouch = Math.min(1, sincePhase / 140)
           bodyScale *= 1 - 0.06 * crouch
           eyeScaleY *= 1 + 0.06 * crouch
-          earPerk = Math.max(earPerk, 0.6 * crouch)
+          earPerk = Math.max(earPerk, 0.6 * crouch, reaction.earPerk)
           tailScale *= 1 - 0.08 * crouch
         }
         if (flight.phase === 'flying' || flight.phase === 'landing') {
@@ -137,13 +150,7 @@ function FatCatAvatarSurface() {
       const tailMidFlight = history.sampleAt(now - FOLLOW_DELAY_MS.tailMid)
       const tailTipFlight = history.sampleAt(now - FOLLOW_DELAY_MS.tailTip) * TAIL_TIP_FLIGHT_OVERSHOOT
 
-      const sinceClick = now - clickedAtRef.current
-      if (!reduceMotion.matches && sinceClick >= 0 && sinceClick < CLICK_REACTION_DURATION_MS) {
-        const reaction = clickReactionPose(sinceClick)
-        bodyScale *= reaction.bodyScale
-        eyeScaleY *= reaction.eyeScaleY
-        earPerk = Math.max(earPerk, reaction.earPerk)
-      }
+      earPerk = Math.max(earPerk, reaction.earPerk)
       const bodyRotationDeg = pose.bodyRotationDeg + tilt
       const earFollowDelta = earFollowRotationDelta(bodyRotationDeg, follow.earRotationDeg + earFlightTilt)
       const tailBaseDelta = earFollowRotationDelta(bodyRotationDeg, follow.tailBaseDeg + tailBaseFlight)
@@ -177,7 +184,6 @@ function FatCatAvatarSurface() {
       data-flight={flightPhase}
       aria-label="FatCat avatar"
       onClick={() => {
-        clickedAtRef.current = performance.now()
         notifyNative('click')
       }}
       onContextMenu={(event) => {
