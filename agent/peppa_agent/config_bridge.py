@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from typing import Any
+from urllib.parse import urlsplit, urlunsplit
 
 
 class ConfigBridge:
@@ -29,6 +30,7 @@ class ConfigBridge:
         model_config = config.get("model") if isinstance(config.get("model"), dict) else {}
         default_provider = str(model_config.get("provider") or "").strip()
         default_model = str(model_config.get("default") or "").strip()
+        base_url = self._safe_base_url(model_config.get("base_url"))
         provider_config = config.get("providers") if isinstance(config.get("providers"), dict) else {}
         descriptors = {str(item.slug): item for item in self.catalog.provider_catalog()}
 
@@ -50,7 +52,8 @@ class ConfigBridge:
                 "detail": status["detail"],
                 "account": status.get("account", ""),
                 "credential_ref": credential_ref if self._is_reference(credential_ref) else "",
-                "is_default": provider == default_provider and bool(default_model),
+                "base_url": base_url if provider == default_provider else "",
+                "is_default": "true" if provider == default_provider and bool(default_model) else "false",
                 "default_model": default_model if provider == default_provider else "",
             }
             rows.append(row)
@@ -97,6 +100,21 @@ class ConfigBridge:
         self.config.save_config(config)
         return {"provider": provider, "credential_ref": credential_ref}
 
+    def set_base_url(self, provider: str, base_url: str) -> dict[str, str]:
+        self._require_provider(provider)
+        provider = provider.strip()
+        base_url = self._normalize_base_url(base_url)
+        config = self.config.load_config() or {}
+        model_config = config.get("model") if isinstance(config.get("model"), dict) else {}
+        model_config = dict(model_config)
+        if base_url:
+            model_config["base_url"] = base_url
+        else:
+            model_config.pop("base_url", None)
+        config["model"] = model_config
+        self.config.save_config(config)
+        return {"provider": provider, "base_url": base_url}
+
     def validate(self, provider: str, model: str) -> dict[str, Any]:
         self._require_provider(provider)
         provider = provider.strip()
@@ -117,6 +135,27 @@ class ConfigBridge:
     def _require_provider(self, provider: str) -> None:
         if provider.strip() not in self.SUPPORTED_PROVIDERS:
             raise ValueError(f"Unsupported FatCat provider: {provider}")
+
+    @staticmethod
+    def _normalize_base_url(value: str) -> str:
+        value = value.strip()
+        if not value:
+            return ""
+        parsed = urlsplit(value)
+        if parsed.scheme not in {"http", "https"} or not parsed.netloc or parsed.username or parsed.password:
+            raise ValueError("base_url must be an http(s) URL without embedded credentials")
+        if parsed.query or parsed.fragment:
+            raise ValueError("base_url must not contain a query or fragment")
+        return urlunsplit((parsed.scheme, parsed.netloc, parsed.path.rstrip("/"), "", ""))
+
+    @staticmethod
+    def _safe_base_url(value: Any) -> str:
+        if not isinstance(value, str):
+            return ""
+        try:
+            return ConfigBridge._normalize_base_url(value)
+        except ValueError:
+            return ""
 
     def _safe_status(self, provider: str) -> dict[str, Any]:
         raw = self.auth.get_auth_status(provider) or {}

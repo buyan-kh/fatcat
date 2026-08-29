@@ -2,18 +2,10 @@ import Testing
 @testable import PeppaAnywhereCore
 
 struct ProviderDiscoveryTests {
-    @Test func catalogIncludesSubscriptionAndLocalBrains() {
+    @Test func catalogContainsOnlyTheInitialHermesProviders() {
         let ids = Set(ProviderCatalog.supported.map(\.id))
 
-        #expect(ids.contains("codex"))
-        #expect(ids.contains("claude-code"))
-        #expect(ids.contains("gemini-cli"))
-        #expect(ids.contains("copilot-cli"))
-        #expect(ids.contains("ollama"))
-        #expect(ids.contains("mlx"))
-        #expect(ids.contains("lm-studio"))
-        #expect(ids.contains("llama.cpp"))
-        #expect(ids.contains("openrouter"))
+        #expect(ids == ["openai-codex", "openai-api", "anthropic"])
     }
 
     @Test func discoveryReportsPresenceWithoutCopyingCredentials() async throws {
@@ -34,9 +26,8 @@ struct ProviderDiscoveryTests {
     }
 
     @Test func subscriptionProvidersUseOfficialCliIdentifiers() {
-        #expect(ProviderCatalog.provider(id: "codex")?.transport == .officialCLI)
-        #expect(ProviderCatalog.provider(id: "claude-code")?.transport == .officialCLI)
-        #expect(ProviderCatalog.provider(id: "gemini-cli")?.transport == .officialCLI)
-        #expect(ProviderCatalog.provider(id: "copilot-cli")?.transport == .officialCLI)
+        #expect(ProviderCatalog.provider(id: "openai-codex")?.transport == .hermes)
+        #expect(ProviderCatalog.provider(id: "openai-api")?.transport == .apiKey)
+        #expect(ProviderCatalog.provider(id: "anthropic")?.transport == .apiKey)
     }
 }

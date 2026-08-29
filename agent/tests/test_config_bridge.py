@@ -60,6 +60,7 @@ class ConfigBridgeTests(unittest.TestCase):
         self.assertEqual([row["slug"] for row in rows], ["openai-codex", "openai-api", "anthropic"])
         self.assertEqual(rows[0]["status"], "connected")
         self.assertEqual(rows[0]["account"], "codex@example.test")
+        self.assertTrue(all(isinstance(value, str) for row in rows for value in row.values()))
         self.assertNotIn("access_token", repr(rows))
         self.assertNotIn("must-not-leak", repr(rows))
 
@@ -80,6 +81,21 @@ class ConfigBridgeTests(unittest.TestCase):
 
         self.assertEqual(result, {"provider": "openai-api", "credential_ref": "fatcat-key:openai-api"})
         self.assertEqual(config.saved["providers"]["openai-api"], {"credential_ref": "fatcat-key:openai-api"})
+
+    def test_openai_compatible_base_url_is_normalized_and_stays_non_secret(self):
+        bridge, config = self.make_bridge({"model": {"provider": "openai-api", "default": "gpt-4.1"}})
+
+        result = bridge.set_base_url("openai-api", "https://llm.example.test/v1/")
+
+        self.assertEqual(result, {"provider": "openai-api", "base_url": "https://llm.example.test/v1"})
+        self.assertEqual(config.saved["model"]["base_url"], "https://llm.example.test/v1")
+        self.assertNotIn("api_key", repr(config.saved))
+
+    def test_base_url_rejects_embedded_credentials(self):
+        bridge, _ = self.make_bridge()
+
+        with self.assertRaises(ValueError):
+            bridge.set_base_url("openai-api", "https://user:password@example.test/v1")
 
     def test_validation_requires_authenticated_provider_and_known_model(self):
         bridge, _ = self.make_bridge()

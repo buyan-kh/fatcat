@@ -403,6 +403,7 @@ class PeppaAgentServer:
             "provider_models",
             "provider_set_default",
             "provider_set_credential_ref",
+            "provider_set_base_url",
             "provider_validate",
         }:
             return self._handle_provider_message(message)
@@ -446,6 +447,9 @@ class PeppaAgentServer:
             if message_type == "provider_set_credential_ref":
                 result = bridge.set_credential_ref(provider, self._required_text(message, "credential_ref"))
                 return _event("provider_configured", request_id=request_id, operation="credential_ref", **result)
+            if message_type == "provider_set_base_url":
+                result = bridge.set_base_url(provider, str(message.get("base_url") or ""))
+                return _event("provider_configured", request_id=request_id, operation="base_url", **result)
             result = bridge.validate(provider, self._required_text(message, "model"))
             return _event("provider_validation_result", request_id=request_id, **result)
         except Exception:

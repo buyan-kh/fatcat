@@ -29,6 +29,9 @@ class ServerTests(unittest.IsolatedAsyncioTestCase):
             def set_credential_ref(self, provider, credential_ref):
                 return {"provider": provider, "credential_ref": credential_ref}
 
+            def set_base_url(self, provider, base_url):
+                return {"provider": provider, "base_url": base_url}
+
             def validate(self, provider, model):
                 return {"provider": provider, "model": model, "usable": True, "detail": "ok"}
 
@@ -38,13 +41,15 @@ class ServerTests(unittest.IsolatedAsyncioTestCase):
         models = await server.handle_message({"version": 1, "type": "provider_models", "request_id": "r2", "provider_id": "openai-codex", "refresh": True}, lambda event: None)
         selected = await server.handle_message({"version": 1, "type": "provider_set_default", "request_id": "r3", "provider_id": "openai-codex", "model": "gpt-5"}, lambda event: None)
         credential = await server.handle_message({"version": 1, "type": "provider_set_credential_ref", "request_id": "r4", "provider_id": "openai-api", "credential_ref": "fatcat-key:openai-api"}, lambda event: None)
-        validation = await server.handle_message({"version": 1, "type": "provider_validate", "request_id": "r5", "provider_id": "openai-codex", "model": "gpt-5"}, lambda event: None)
+        base_url = await server.handle_message({"version": 1, "type": "provider_set_base_url", "request_id": "r5", "provider_id": "openai-api", "base_url": "https://api.example.test/v1"}, lambda event: None)
+        validation = await server.handle_message({"version": 1, "type": "provider_validate", "request_id": "r6", "provider_id": "openai-codex", "model": "gpt-5"}, lambda event: None)
 
         self.assertEqual(inventory, {"version": 1, "type": "provider_inventory_result", "request_id": "r1", "providers": [{"slug": "openai-codex", "status": "connected"}]})
         self.assertEqual(models, {"version": 1, "type": "provider_models_result", "request_id": "r2", "provider_id": "openai-codex", "models": ["openai-codex", "gpt-5"]})
         self.assertEqual(selected, {"version": 1, "type": "provider_configured", "request_id": "r3", "operation": "default", "provider": "openai-codex", "model": "gpt-5"})
         self.assertEqual(credential, {"version": 1, "type": "provider_configured", "request_id": "r4", "operation": "credential_ref", "provider": "openai-api", "credential_ref": "fatcat-key:openai-api"})
-        self.assertEqual(validation, {"version": 1, "type": "provider_validation_result", "request_id": "r5", "provider": "openai-codex", "model": "gpt-5", "usable": True, "detail": "ok"})
+        self.assertEqual(base_url, {"version": 1, "type": "provider_configured", "request_id": "r5", "operation": "base_url", "provider": "openai-api", "base_url": "https://api.example.test/v1"})
+        self.assertEqual(validation, {"version": 1, "type": "provider_validation_result", "request_id": "r6", "provider": "openai-codex", "model": "gpt-5", "usable": True, "detail": "ok"})
 
     async def test_provider_control_errors_are_safe_and_never_echo_credentials(self):
         class FailingBridge:

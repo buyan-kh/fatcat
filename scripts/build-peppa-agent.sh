@@ -22,6 +22,7 @@ if [[ "$actual_commit" != "$EXPECTED_COMMIT" && "${PEPPA_ALLOW_HERMES_COMMIT_MIS
   exit 1
 fi
 
+[[ -d "$HERMES_BUILD_SOURCE" ]] || { echo "Hermes runtime source is not available at $HERMES_BUILD_SOURCE; set PEPPA_HERMES_BUILD_SOURCE on the build machine" >&2; exit 1; }
 PYTHON_RUNTIME="$(find "$HERMES_BUILD_SOURCE/.hermes-runtime/python" -maxdepth 2 -type d -name 'cpython-3.11.*-macos-aarch64-none' -print -quit)"
 [[ -n "$PYTHON_RUNTIME" ]] || { echo "Bundled CPython 3.11 runtime not found" >&2; exit 1; }
 [[ -d "$HERMES_BUILD_SOURCE/venv/lib/python3.11/site-packages" ]] || { echo "Hermes Python dependencies are not installed" >&2; exit 1; }
@@ -33,9 +34,16 @@ fi
 mkdir -p "$STAGE_DIR"
 rsync -a --exclude '.git' --exclude 'node_modules' --exclude 'tests' --exclude 'tests-js' --exclude '__pycache__' --exclude '*.pyc' --exclude '.hermes-runtime' --exclude 'venv' --exclude 'apps' --exclude 'website' --exclude 'web' --exclude 'ui-tui' "$HERMES_SOURCE/" "$STAGE_DIR/"
 mkdir -p "$STAGE_DIR/runtime" "$STAGE_DIR/venv"
-rsync -aL "$PYTHON_RUNTIME/" "$STAGE_DIR/runtime/"
-rsync -a --exclude 'bin' "$HERMES_BUILD_SOURCE/venv/" "$STAGE_DIR/venv/"
-rsync -a "$REPO_ROOT/agent/peppa_agent" "$STAGE_DIR/"
+rsync -aL --exclude '__pycache__/' --exclude '*.pyc' "$PYTHON_RUNTIME/" "$STAGE_DIR/runtime/"
+rsync -a --exclude 'bin' --exclude 'pyvenv.cfg' --exclude '__pycache__/' --exclude '*.pyc' --exclude '__editable__*' --exclude 'hermes_agent-*.dist-info/' "$HERMES_BUILD_SOURCE/venv/" "$STAGE_DIR/venv/"
+sysconfig_data="$(find "$STAGE_DIR/runtime/lib/python3.11" -maxdepth 1 -name '_sysconfigdata_*.py' -print -quit)"
+if [[ -n "$sysconfig_data" ]]; then
+  sed -i '' "s|$PYTHON_RUNTIME|$STAGE_DIR/runtime|g" "$sysconfig_data"
+fi
+if command -v install_name_tool >/dev/null 2>&1 && [[ -f "$STAGE_DIR/runtime/lib/libpython3.11.dylib" ]]; then
+  install_name_tool -id '@rpath/libpython3.11.dylib' "$STAGE_DIR/runtime/lib/libpython3.11.dylib"
+fi
+rsync -a --exclude '__pycache__/' --exclude '*.pyc' "$REPO_ROOT/agent/peppa_agent" "$STAGE_DIR/"
 cp "$REPO_ROOT/agent/peppa_agent/PeppaAgent" "$STAGE_DIR/PeppaAgent"
 chmod 755 "$STAGE_DIR/PeppaAgent"
 cp "$REPO_ROOT/agent/README.md" "$STAGE_DIR/PEPPA_AGENT.md"

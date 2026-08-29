@@ -38,6 +38,18 @@ rsync -a \
   --exclude 'website/' \
   --exclude 'web/' \
   --exclude 'ui-tui/' \
+  --exclude '.github/' \
+  --exclude 'docs/' \
+  --exclude 'evals/' \
+  --exclude 'optional-mcps/' \
+  --exclude 'mcp-research-data/' \
+  --exclude 'docker/' \
+  --exclude 'nix/' \
+  --exclude 'contributors/' \
+  --exclude 'datagen-config-examples/' \
+  --exclude 'cron/' \
+  --exclude 'tui_gateway/' \
+  --exclude 'hermes_agent.egg-info/' \
   --exclude '__pycache__/' \
   --exclude '*.pyc' \
   --exclude '.env' \

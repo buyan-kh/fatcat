@@ -17,6 +17,7 @@
 - Create `scripts/vendor-hermes.sh`: repeatable source-sync script that refuses a mismatched source commit unless explicitly overridden.
 - Modify `scripts/build-peppa-agent.sh`: use the tracked vendor source by default, stage only runtime files plus bundled Python/dependencies, and write commit/dependency metadata.
 - Modify `scripts/verify-peppa-macos-app.sh`: verify the bundle has the vendored runtime and no external Hermes path or developer auth/data.
+- Create `scripts/package-peppa-dmg.sh`: verify a signed `FatCat.app` and create `dist/FatCat.dmg` with the self-contained app.
 - Modify `agent/peppa_agent/server.py`: add Hermes-owned non-secret provider inventory, model listing, validation, default selection, and credential-reference operations.
 - Create `agent/peppa_agent/config_bridge.py`: narrow Python adapter around Hermes config/auth/model APIs; no UI or socket parsing.
 - Modify `agent/tests/test_server.py`: test control messages and safe error events.
@@ -28,7 +29,7 @@
 - Modify `macos/PeppaAnywhere/Tests/PeppaAnywhereCoreTests/PeppaIPCTests.swift`: round-trip all control messages and verify secret fields remain rejected.
 - Create `macos/PeppaAnywhere/Tests/PeppaAnywhereCoreTests/FatCatProviderSetupTests.swift`: test setup-state transitions, explicit default selection, validation failure preservation, and redacted credentials.
 - Modify `macos/PeppaAnywhere/Tests/PeppaAnywhereCoreTests/ProviderDiscoveryTests.swift`: replace the broad provider catalog contract with the Hermes-first supported slice.
-- Add `scripts/test-hermes-bundle.sh`: build a clean temporary staging directory and assert it contains no personal paths, auth files, or key literals.
+- Add `scripts/test-hermes-bundle.sh`: build a clean temporary staging directory, start the staged runtime, and assert it contains no personal paths, auth files, or key literals.
 - Modify `README.md`: document the vendored Hermes runtime, provider setup, MIT attribution, and clean packaging verification.
 
 ### Task 1: Vendor the pinned Hermes runtime source
@@ -119,7 +120,7 @@ def test_supported_inventory_is_hermes_owned():
 def test_default_selection_persists_provider_and_model_only():
     config = fake_config()
     ConfigBridge(config, fake_auth(), fake_models()).set_default("openai-codex", "gpt-5")
-    assert config.saved["model"] == {"provider": "openai-codex", "name": "gpt-5"}
+    assert config.saved["model"] == {"provider": "openai-codex", "default": "gpt-5"}
     assert "api_key" not in repr(config.saved)
 ```
 
@@ -131,7 +132,7 @@ Expected: import or behavior failures because `config_bridge.py` and control ope
 
 - [ ] **Step 3: Implement the minimal bridge**
 
-Implement `ConfigBridge` with these methods:
+Implement `ConfigBridge` with these methods (plus `set_base_url` for OpenAI-compatible endpoints):
 
 ```python
 class ConfigBridge:
@@ -147,7 +148,7 @@ Use Hermes `provider_catalog`, `get_auth_status`, `provider_model_ids`, `load_co
 
 - [ ] **Step 4: Add control messages to the agent server**
 
-Add message types `provider_inventory`, `provider_models`, `provider_set_default`, `provider_set_credential_ref`, and `provider_validate` to `PeppaAgentServer.handle_message`. Responses are `provider_inventory_result`, `provider_models_result`, `provider_configured`, and `provider_validation_result`; failures use the existing safe `error` event.
+Add message types `provider_inventory`, `provider_models`, `provider_set_default`, `provider_set_credential_ref`, `provider_set_base_url`, and `provider_validate` to `PeppaAgentServer.handle_message`. Responses are `provider_inventory_result`, `provider_configured`, and `provider_validation_result`; failures use the existing safe `error` event.
 
 - [ ] **Step 5: Run Python tests to verify green**
 
@@ -234,7 +235,7 @@ Keep the generic Hermes data model reusable, but make the FatCat visible catalog
 
 - [ ] **Step 4: Add control calls to `PeppaAgentClient`**
 
-Implement asynchronous request methods for inventory, model listing, default selection, credential-reference binding, and validation. Route incoming result messages to a `SettingsCoordinator` owned by the app delegate; keep chat handling unchanged.
+Implement asynchronous request methods for inventory, model listing, default selection, credential-reference binding, base URL configuration, and validation. Route incoming result messages to the app model; keep chat handling unchanged.
 
 - [ ] **Step 5: Build the native Settings UI**
 
@@ -267,7 +268,7 @@ Expected: failure if build scripts still require `/Users/<developer>/.hermes/her
 
 - [ ] **Step 3: Update release staging**
 
-Ensure `scripts/run-peppa-macos.sh` builds from the tracked source, places Hermes source/runtime/dependencies beneath `Contents/Resources/PeppaAgent`, preserves the app-local `HERMES_HOME`, and creates a DMG artifact without personal config. Do not copy `~/.hermes`, `~/.codex`, or any `.env` file.
+Ensure `scripts/run-peppa-macos.sh` builds from the tracked source, places Hermes source/runtime/dependencies beneath `Contents/Resources/PeppaAgent`, preserves the app-local `HERMES_HOME`, and calls `scripts/package-peppa-dmg.sh` without personal config. Do not copy `~/.hermes`, `~/.codex`, or any `.env` file.
 
 - [ ] **Step 4: Add attribution and setup documentation**
 

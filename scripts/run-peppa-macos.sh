@@ -35,5 +35,6 @@ else
 fi
 
 "$SCRIPT_DIR/verify-peppa-macos-app.sh" "$APP_BUNDLE"
+"$SCRIPT_DIR/package-peppa-dmg.sh" "$APP_BUNDLE"
 open -a "$APP_BUNDLE"
 echo "Launched $APP_BUNDLE"

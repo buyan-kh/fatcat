@@ -189,7 +189,7 @@ final class PetModel: ObservableObject {
     @Published var draft = ""
     @Published var messages: [ChatMessage] = []
     @Published var agentStatus = "FatCat Agent is not connected."
-    @Published var providerStatuses: [ProviderStatus] = []
+    @Published var providerSetup = FatCatProviderSetupState()
     @Published var chatScrollState = ChatScrollState()
     @Published var isGenerating = false
     @Published var currentRequestID: String?
@@ -292,6 +292,41 @@ final class PeppaAgentClient: ObservableObject {
         request(.loadSession(requestID: UUID().uuidString, conversationID: conversationID, sessionID: sessionID, cwd: cwd))
     }
 
+    func requestProviderInventory() {
+        request(.providerInventory(requestID: UUID().uuidString))
+    }
+
+    func requestProviderModels(providerID: String, refresh: Bool = false) {
+        request(.providerModels(requestID: UUID().uuidString, providerID: providerID, refresh: refresh))
+    }
+
+    func setProviderDefault(providerID: String, model: String) {
+        request(.providerSetDefault(requestID: UUID().uuidString, providerID: providerID, model: model))
+    }
+
+    func setProviderBaseURL(providerID: String, baseURL: String) {
+        request(.providerSetBaseURL(requestID: UUID().uuidString, providerID: providerID, baseURL: baseURL))
+    }
+
+    func validateProvider(providerID: String, model: String) {
+        request(.providerValidate(requestID: UUID().uuidString, providerID: providerID, model: model))
+    }
+
+    func configureProviderCredential(providerID: String, credentialRef: String, baseURL: String?) {
+        launchTask?.cancel()
+        launchTask = Task { [weak self] in
+            guard let self else { return }
+            await ensureConnected()
+            try? write(.providerSetCredentialRef(requestID: UUID().uuidString, providerID: providerID, credentialRef: credentialRef))
+            if let baseURL {
+                try? write(.providerSetBaseURL(requestID: UUID().uuidString, providerID: providerID, baseURL: baseURL))
+            }
+            try? await Task.sleep(for: .milliseconds(150))
+            closeRuntime()
+            await ensureConnected()
+        }
+    }
+
     func send(text: String, sessionID: String, observation: ObservationPayload?, requestID: String = UUID().uuidString) {
         launchTask?.cancel()
         launchTask = Task { [weak self] in
@@ -320,13 +355,17 @@ final class PeppaAgentClient: ObservableObject {
     func stop() {
         launchTask?.cancel()
         if socketHandle != nil { try? write(.shutdown) }
+        closeRuntime()
+        status = "FatCat Agent stopped."
+    }
+
+    private func closeRuntime() {
         socketHandle?.readabilityHandler = nil
         try? socketHandle?.close()
         socketHandle = nil
         process?.terminate()
         process = nil
         try? FileManager.default.removeItem(at: socketPath)
-        status = "FatCat Agent stopped."
     }
 
     private func ensureConnected() async {
@@ -340,6 +379,18 @@ final class PeppaAgentClient: ObservableObject {
             let process = Process()
             process.executableURL = agent
             process.arguments = ["--socket", socketPath.path, "--hermes-home", hermesHome.path]
+            var environment = ProcessInfo.processInfo.environment
+            let credentials = FatCatCredentials()
+            for (providerID, variable) in [
+                ("openai-api", "OPENAI_API_KEY"),
+                ("anthropic", "ANTHROPIC_API_KEY")
+            ] {
+                if let secret = try? credentials.read(providerID: providerID),
+                   !secret.isEmpty {
+                    environment[variable] = secret
+                }
+            }
+            process.environment = environment
             process.standardOutput = FileHandle.nullDevice
             process.standardError = FileHandle.nullDevice
             try process.run()
@@ -1302,6 +1353,21 @@ final class PetWindowController: NSObject, NSWindowDelegate {
             model.handleLife(.hermes(.toolCall(name: name)))
         case let .providerStatus(providerID, authenticated, detail):
             model.appendSystem("\(providerID): \(authenticated ? "available" : "unavailable") — \(detail)")
+        case let .providerInventoryResult(_, providers):
+            model.providerSetup.applyInventory(providers)
+            for provider in model.providerSetup.connections {
+                agent.requestProviderModels(providerID: provider.providerID)
+            }
+        case let .providerModelsResult(_, providerID, models):
+            model.providerSetup.applyModels(providerID: providerID, models: models)
+        case let .providerConfigured(_, operation, provider, modelName, credentialRef):
+            if operation == "default", let modelName {
+                model.providerSetup.setDefault(providerID: provider, model: modelName)
+            } else if operation == "credential_ref", let credentialRef {
+                model.providerSetup.applyCredentialReference(providerID: provider, reference: credentialRef)
+            }
+        case let .providerValidationResult(_, provider, modelName, usable, detail):
+            model.providerSetup.applyValidation(FatCatProviderValidation(providerID: provider, model: modelName, usable: usable, detail: detail))
         case let .proposedAction(_, action, risk, reason):
             model.handleLife(.hermes(.permissionRequested))
             model.appendSystem("Proposed \(action) (\(risk)): \(reason)")
@@ -1363,7 +1429,8 @@ final class PetWindowController: NSObject, NSWindowDelegate {
             guard conversationID == model.selectedConversationID else { return }
             if role == "user" { model.appendUser(text) }
             else if role == "assistant" { let requestID = UUID().uuidString; model.beginAssistant(requestID: requestID); model.appendAssistant(text, requestID: requestID); model.completeAssistant(requestID: requestID) }
-        case .newSession, .loadSession, .listSessions, .sessionList, .cancel, .hello, .helloAck, .userMessage, .observation, .shutdown, .shutdownAck:
+        case .newSession, .loadSession, .listSessions, .sessionList, .cancel, .hello, .helloAck, .userMessage, .observation, .shutdown, .shutdownAck,
+             .providerInventory, .providerModels, .providerSetDefault, .providerSetCredentialRef, .providerSetBaseURL, .providerValidate:
             break
         }
     }
@@ -1448,16 +1515,39 @@ final class PetWindowController: NSObject, NSWindowDelegate {
     }
 
     @objc private func showSettings() {
-        refreshProviderStatuses()
-        let view = SettingsView(status: perception.status, isPaused: perception.isPaused, agentStatus: model.agentStatus, providers: model.providerStatuses, requestAccess: { [weak self] in self?.perception.requestAccess() }, togglePause: { [weak self] in self?.toggleObservation() })
-        showSecondary(title: "FatCat Settings", size: NSSize(width: 460, height: 460), view: view)
+        agent.requestProviderInventory()
+        let view = SettingsView(
+            model: model,
+            status: perception.status,
+            isPaused: perception.isPaused,
+            requestAccess: { [weak self] in self?.perception.requestAccess() },
+            togglePause: { [weak self] in self?.toggleObservation() },
+            refreshProviders: { [weak self] in self?.agent.requestProviderInventory() },
+            refreshModels: { [weak self] providerID in self?.agent.requestProviderModels(providerID: providerID) },
+            saveCredential: { [weak self] providerID, secret, baseURL in
+                self?.saveProviderCredential(providerID: providerID, secret: secret, baseURL: baseURL) ?? false
+            },
+            setDefault: { [weak self] providerID, modelName in
+                self?.agent.setProviderDefault(providerID: providerID, model: modelName)
+                self?.agent.validateProvider(providerID: providerID, model: modelName)
+            }
+        )
+        showSecondary(title: "FatCat Settings", size: NSSize(width: 520, height: 650), view: view)
     }
 
-    private func refreshProviderStatuses() {
-        Task { [weak self] in
-            let statuses = await ProviderDiscovery.live().scan()
-            guard let self else { return }
-            self.model.providerStatuses = statuses
+    private func saveProviderCredential(providerID: String, secret: String, baseURL: String?) -> Bool {
+        do {
+            let credentials = FatCatCredentials()
+            try credentials.save(providerID: providerID, secret: secret)
+            let reference = credentials.reference(providerID: providerID)
+            agent.configureProviderCredential(providerID: providerID, credentialRef: reference, baseURL: baseURL)
+            model.providerSetup.applyCredentialReference(providerID: providerID, reference: reference)
+            if let baseURL, !baseURL.isEmpty {
+                model.providerSetup.applyBaseURL(providerID: providerID, baseURL: baseURL)
+            }
+            return true
+        } catch {
+            return false
         }
     }
 
@@ -1488,36 +1578,156 @@ final class PetWindowController: NSObject, NSWindowDelegate {
 }
 
 struct SettingsView: View {
+    @ObservedObject var model: PetModel
     let status: String
     let isPaused: Bool
-    let agentStatus: String
-    let providers: [ProviderStatus]
     let requestAccess: () -> Void
     let togglePause: () -> Void
+    let refreshProviders: () -> Void
+    let refreshModels: (_ providerID: String) -> Void
+    let saveCredential: (_ providerID: String, _ secret: String, _ baseURL: String?) -> Bool
+    let setDefault: (_ providerID: String, _ model: String) -> Void
+
+    @State private var selectedProviderID = "openai-codex"
+    @State private var modelName = ""
+    @State private var baseURL = ""
+    @State private var apiKey = ""
+    @State private var setupMessage: String?
+
+    private var selectedConnection: FatCatProviderConnection? {
+        model.providerSetup.connection(providerID: selectedProviderID)
+    }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
+        ScrollView {
+          VStack(alignment: .leading, spacing: 14) {
             Text("FatCat").font(.title3.weight(.semibold))
             Text("Screen context stays local and is reduced to privacy-filtered structured metadata.").font(.callout).foregroundStyle(.secondary)
             Label(status, systemImage: isPaused ? "pause.circle" : "eye").font(.caption)
-            Label(agentStatus, systemImage: "brain").font(.caption).lineLimit(2)
-            Text("Brains").font(.headline)
-            ScrollView {
-                VStack(alignment: .leading, spacing: 5) {
-                    ForEach(providers, id: \.id) { provider in
+            Label(model.agentStatus, systemImage: "brain").font(.caption).lineLimit(2)
+
+            HStack {
+                Text("Hermes providers").font(.headline)
+                Spacer()
+                Button("Refresh") { model.providerSetup = FatCatProviderSetupState(); refreshProviders() }
+            }
+            Text("Hermes owns provider detection and model discovery. FatCat only stores API secrets in the macOS Keychain.")
+                .font(.caption).foregroundStyle(.secondary)
+
+            VStack(alignment: .leading, spacing: 7) {
+                ForEach(model.providerSetup.connections) { provider in
+                    Button {
+                        selectedProviderID = provider.providerID
+                        syncSelectedFields()
+                    } label: {
                         HStack {
-                            Image(systemName: provider.authenticated ? "checkmark.circle.fill" : provider.installed ? "circle.dotted" : "circle")
-                                .foregroundStyle(provider.authenticated ? .green : .secondary)
-                            Text(provider.displayName)
+                            Image(systemName: icon(for: provider.status))
+                                .foregroundStyle(color(for: provider.status))
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(provider.displayName).foregroundStyle(.primary)
+                                Text(provider.detail).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                            }
                             Spacer()
-                            Text(provider.authenticated ? "Connected" : provider.installed ? "Installed" : "Not found")
-                                .font(.caption).foregroundStyle(.secondary)
+                            if provider.isDefault { Text("Default").font(.caption.weight(.medium)).foregroundStyle(.blue) }
                         }
+                        .padding(.vertical, 5)
                     }
+                    .buttonStyle(.plain)
                 }
             }
+
+            Divider()
+            Text("Default Hermes model").font(.headline)
+            if model.providerSetup.connections.isEmpty {
+                Text("Connecting to the bundled Hermes runtime…").font(.caption).foregroundStyle(.secondary)
+            } else {
+                Picker("Provider", selection: $selectedProviderID) {
+                    ForEach(model.providerSetup.connections) { provider in
+                        Text(provider.displayName).tag(provider.providerID)
+                    }
+                }
+                .onChange(of: selectedProviderID) { _ in
+                    syncSelectedFields()
+                    refreshModels(selectedProviderID)
+                }
+
+                if let selectedConnection, !selectedConnection.models.isEmpty {
+                    Picker("Model", selection: $modelName) {
+                        ForEach(selectedConnection.models, id: \.self) { model in Text(model).tag(model) }
+                    }
+                }
+                TextField("Model ID", text: $modelName)
+                    .textFieldStyle(.roundedBorder)
+                Button("Use this provider and model") {
+                    let provider = selectedProviderID.trimmingCharacters(in: .whitespacesAndNewlines)
+                    let selectedModel = modelName.trimmingCharacters(in: .whitespacesAndNewlines)
+                    guard !provider.isEmpty, !selectedModel.isEmpty else { return }
+                    setDefault(provider, selectedModel)
+                }
+                .disabled(modelName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            }
+
+            if selectedProviderID == "openai-api" || selectedProviderID == "anthropic" {
+                Divider()
+                Text(selectedProviderID == "openai-api" ? "OpenAI-compatible API" : "Claude / Anthropic API").font(.headline)
+                SecureField("API key", text: $apiKey)
+                    .textFieldStyle(.roundedBorder)
+                if selectedProviderID == "openai-api" {
+                    TextField("Base URL (optional)", text: $baseURL)
+                        .textFieldStyle(.roundedBorder)
+                    Text("For OpenAI-compatible servers, use an HTTPS or local HTTP endpoint such as https://api.example.com/v1.")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+                Button("Save API settings") {
+                    let secret = apiKey.trimmingCharacters(in: .whitespacesAndNewlines)
+                    guard !secret.isEmpty else {
+                        setupMessage = "Enter an API key first."
+                        return
+                    }
+                    let endpoint = selectedProviderID == "openai-api" ? baseURL.trimmingCharacters(in: .whitespacesAndNewlines) : ""
+                    if saveCredential(selectedProviderID, secret, endpoint.isEmpty ? nil : endpoint) {
+                        apiKey = ""
+                        setupMessage = "Saved to the macOS Keychain. Hermes will restart with the new provider settings."
+                    } else {
+                        setupMessage = "FatCat could not save that API key to the macOS Keychain."
+                    }
+                }
+                if let setupMessage { Text(setupMessage).font(.caption).foregroundStyle(.secondary) }
+                if selectedConnection?.credentialReference != nil {
+                    Label("API key is stored in Keychain", systemImage: "lock.fill").font(.caption).foregroundStyle(.secondary)
+                }
+            } else if selectedProviderID == "openai-codex" {
+                Label("Codex subscription detection is handled by Hermes using the official Codex auth state.", systemImage: "checkmark.shield").font(.caption).foregroundStyle(.secondary)
+            }
+
             HStack { Button("Request Screen Recording", action: requestAccess); Button(isPaused ? "Resume Observation" : "Pause Observation", action: togglePause) }
-        }.padding(22).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+          }
+        }
+        .padding(22)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .onAppear { syncSelectedFields() }
+        .onChange(of: model.providerSetup) { _ in syncSelectedFields() }
+    }
+
+    private func syncSelectedFields() {
+        guard let connection = model.providerSetup.connection(providerID: selectedProviderID) else {
+            if let first = model.providerSetup.connections.first {
+                selectedProviderID = first.providerID
+            }
+            return
+        }
+        if modelName.isEmpty || (!connection.models.isEmpty && !connection.models.contains(modelName)) {
+            modelName = connection.defaultModel ?? connection.models.first ?? modelName
+        }
+        baseURL = connection.baseURL ?? ""
+    }
+
+    private func icon(for status: FatCatProviderStatus) -> String {
+        switch status { case .connected: return "checkmark.circle.fill"; case .needsSetup: return "circle.dotted"; case .error: return "exclamationmark.circle.fill"; case .unavailable: return "circle" }
+    }
+
+    private func color(for status: FatCatProviderStatus) -> Color {
+        switch status { case .connected: return .green; case .error: return .orange; case .needsSetup, .unavailable: return .secondary }
     }
 }
 

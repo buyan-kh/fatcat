@@ -3,6 +3,33 @@ import Testing
 @testable import PeppaAnywhereCore
 
 struct PeppaIPCTests {
+    @Test func providerSetupMessagesRoundTripWithoutRawCredentials() throws {
+        let messages: [PeppaIPCMessage] = [
+            .providerInventory(requestID: "inventory-1"),
+            .providerModels(requestID: "models-1", providerID: "openai-codex", refresh: true),
+            .providerSetDefault(requestID: "default-1", providerID: "openai-codex", model: "gpt-5"),
+            .providerSetCredentialRef(requestID: "credential-1", providerID: "openai-api", credentialRef: "fatcat-key:openai-api"),
+            .providerSetBaseURL(requestID: "url-1", providerID: "openai-api", baseURL: "https://api.example.test/v1"),
+            .providerValidate(requestID: "validate-1", providerID: "anthropic", model: "claude-sonnet-4-20250514"),
+            .providerInventoryResult(requestID: "inventory-1", providers: [["slug": "openai-codex", "status": "connected"]]),
+            .providerModelsResult(requestID: "models-1", providerID: "openai-codex", models: ["gpt-5"]),
+            .providerConfigured(requestID: "default-1", operation: "default", provider: "openai-codex", model: "gpt-5", credentialRef: nil),
+            .providerConfigured(requestID: "credential-1", operation: "credential_ref", provider: "openai-api", model: nil, credentialRef: "fatcat-key:openai-api"),
+            .providerValidationResult(requestID: "validate-1", provider: "anthropic", model: "claude-sonnet-4-20250514", usable: true, detail: "Provider and model are available.")
+        ]
+
+        for message in messages {
+            #expect(try PeppaIPCCodec.decodeLine(PeppaIPCCodec.encode(message: message)) == message)
+        }
+    }
+
+    @Test func providerSetupMessagesRejectRawCredentialFields() throws {
+        let raw = "{\"version\":1,\"type\":\"provider_set_default\",\"request_id\":\"r1\",\"provider_id\":\"openai-api\",\"model\":\"gpt-5\",\"api_key\":\"sk-live\"}"
+        #expect(throws: PeppaIPCError.credentialField("api_key")) {
+            try PeppaIPCCodec.decodeLine(raw)
+        }
+    }
+
     @Test func encodesTypedMessagesAsOneNewlineDelimitedRecord() throws {
         let message = PeppaIPCMessage.userMessage(
             requestID: "request-1",

@@ -33,6 +33,11 @@ fail() { echo "Packaging verification failed: $1" >&2; exit 1; }
 [[ ! -d "$AGENT_ROOT/apps" ]] || fail "unused Hermes apps leaked into app bundle"
 [[ ! -f "$AGENT_ROOT/.env" ]] || fail "Hermes environment file leaked into app bundle"
 [[ ! -f "$AGENT_ROOT/auth.json" ]] || fail "Hermes auth file leaked into app bundle"
+[[ -z "$(find "$AGENT_ROOT" -type f -name '*.pyc' -print -quit)" ]] || fail "generated Python bytecode leaked into app bundle"
+for developer_path in "$HOME/.hermes" "$HOME/.codex"; do
+  matches="$(find "$AGENT_ROOT" -type f ! -name '*.pyc' -print0 | xargs -0 rg -l --fixed-strings -- "$developer_path" || true)"
+  [[ -z "$matches" ]] || fail "developer path leaked into app bundle: $developer_path"
+done
 [[ ! -d "$RESOURCE_BUNDLE/WebApp" ]] || fail "browser dashboard leaked into app bundle"
 
 bundle_identifier="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$INFO_PLIST" 2>/dev/null)" || fail "missing bundle identifier"

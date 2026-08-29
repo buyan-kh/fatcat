@@ -35,6 +35,16 @@ public enum PeppaIPCMessage: Equatable, Sendable {
     case plan(requestID: String, sessionID: String, steps: [String])
     case toolCall(requestID: String, name: String, arguments: [String: String])
     case providerStatus(providerID: String, authenticated: Bool, detail: String)
+    case providerInventory(requestID: String)
+    case providerModels(requestID: String, providerID: String, refresh: Bool)
+    case providerSetDefault(requestID: String, providerID: String, model: String)
+    case providerSetCredentialRef(requestID: String, providerID: String, credentialRef: String)
+    case providerSetBaseURL(requestID: String, providerID: String, baseURL: String)
+    case providerValidate(requestID: String, providerID: String, model: String)
+    case providerInventoryResult(requestID: String, providers: [[String: String]])
+    case providerModelsResult(requestID: String, providerID: String, models: [String])
+    case providerConfigured(requestID: String, operation: String, provider: String, model: String?, credentialRef: String?)
+    case providerValidationResult(requestID: String, provider: String, model: String, usable: Bool, detail: String)
     case assistantDelta(requestID: String, sessionID: String, text: String)
     case state(PeppaAgentState)
     case sessionState(PeppaAgentState, sessionID: String, requestID: String?)
@@ -88,6 +98,9 @@ public enum PeppaIPCCodec {
             guard let value = dictionary[key] as? Bool else { throw PeppaIPCError.malformed("missing \(key)") }
             return value
         }
+        func optionalString(_ key: String) -> String? {
+            dictionary[key] as? String
+        }
         switch type {
         case "hello": return .hello
         case "hello_ack": return .helloAck(agentVersion: try string("agent_version"))
@@ -111,6 +124,22 @@ public enum PeppaIPCCodec {
             guard let arguments = dictionary["arguments"] as? [String: String] else { throw PeppaIPCError.malformed("invalid tool call") }
             return .toolCall(requestID: try string("request_id"), name: try string("name"), arguments: arguments)
         case "provider_status": return .providerStatus(providerID: try string("provider_id"), authenticated: try bool("authenticated"), detail: try string("detail"))
+        case "provider_inventory": return .providerInventory(requestID: try string("request_id"))
+        case "provider_models": return .providerModels(requestID: try string("request_id"), providerID: try string("provider_id"), refresh: try bool("refresh"))
+        case "provider_set_default": return .providerSetDefault(requestID: try string("request_id"), providerID: try string("provider_id"), model: try string("model"))
+        case "provider_set_credential_ref": return .providerSetCredentialRef(requestID: try string("request_id"), providerID: try string("provider_id"), credentialRef: try string("credential_ref"))
+        case "provider_set_base_url": return .providerSetBaseURL(requestID: try string("request_id"), providerID: try string("provider_id"), baseURL: try string("base_url"))
+        case "provider_validate": return .providerValidate(requestID: try string("request_id"), providerID: try string("provider_id"), model: try string("model"))
+        case "provider_inventory_result":
+            guard let providers = dictionary["providers"] as? [[String: String]] else { throw PeppaIPCError.malformed("invalid provider inventory") }
+            return .providerInventoryResult(requestID: try string("request_id"), providers: providers)
+        case "provider_models_result":
+            guard let models = dictionary["models"] as? [String] else { throw PeppaIPCError.malformed("invalid provider models") }
+            return .providerModelsResult(requestID: try string("request_id"), providerID: try string("provider_id"), models: models)
+        case "provider_configured":
+            return .providerConfigured(requestID: try string("request_id"), operation: try string("operation"), provider: try string("provider"), model: optionalString("model"), credentialRef: optionalString("credential_ref"))
+        case "provider_validation_result":
+            return .providerValidationResult(requestID: try string("request_id"), provider: try string("provider"), model: try string("model"), usable: try bool("usable"), detail: try string("detail"))
         case "state":
             guard let state = PeppaAgentState(rawValue: try string("state")) else { throw PeppaIPCError.malformed("unknown state") }
             if let sessionID = dictionary["session_id"] as? String {
@@ -152,6 +181,16 @@ public enum PeppaIPCCodec {
         case let .plan(requestID, sessionID, steps): return ["version": 1, "type": "plan", "request_id": requestID, "session_id": sessionID, "steps": steps]
         case let .toolCall(requestID, name, arguments): return ["version": 1, "type": "tool_call", "request_id": requestID, "name": name, "arguments": arguments]
         case let .providerStatus(providerID, authenticated, detail): return ["version": 1, "type": "provider_status", "provider_id": providerID, "authenticated": authenticated, "detail": detail]
+        case let .providerInventory(requestID): return ["version": 1, "type": "provider_inventory", "request_id": requestID]
+        case let .providerModels(requestID, providerID, refresh): return ["version": 1, "type": "provider_models", "request_id": requestID, "provider_id": providerID, "refresh": refresh]
+        case let .providerSetDefault(requestID, providerID, model): return ["version": 1, "type": "provider_set_default", "request_id": requestID, "provider_id": providerID, "model": model]
+        case let .providerSetCredentialRef(requestID, providerID, credentialRef): return ["version": 1, "type": "provider_set_credential_ref", "request_id": requestID, "provider_id": providerID, "credential_ref": credentialRef]
+        case let .providerSetBaseURL(requestID, providerID, baseURL): return ["version": 1, "type": "provider_set_base_url", "request_id": requestID, "provider_id": providerID, "base_url": baseURL]
+        case let .providerValidate(requestID, providerID, model): return ["version": 1, "type": "provider_validate", "request_id": requestID, "provider_id": providerID, "model": model]
+        case let .providerInventoryResult(requestID, providers): return ["version": 1, "type": "provider_inventory_result", "request_id": requestID, "providers": providers]
+        case let .providerModelsResult(requestID, providerID, models): return ["version": 1, "type": "provider_models_result", "request_id": requestID, "provider_id": providerID, "models": models]
+        case let .providerConfigured(requestID, operation, provider, model, credentialRef): return ["version": 1, "type": "provider_configured", "request_id": requestID, "operation": operation, "provider": provider, "model": model ?? NSNull(), "credential_ref": credentialRef ?? NSNull()]
+        case let .providerValidationResult(requestID, provider, model, usable, detail): return ["version": 1, "type": "provider_validation_result", "request_id": requestID, "provider": provider, "model": model, "usable": usable, "detail": detail]
         case let .assistantDelta(requestID, sessionID, text): return ["version": 1, "type": "assistant_delta", "request_id": requestID, "session_id": sessionID, "text": text]
         case let .state(state): return ["version": 1, "type": "state", "state": state.rawValue]
         case let .sessionState(state, sessionID, requestID): return ["version": 1, "type": "state", "state": state.rawValue, "session_id": sessionID, "request_id": requestID ?? NSNull()]
