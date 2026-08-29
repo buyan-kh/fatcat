@@ -8,10 +8,10 @@ describe('avatar data helpers', () => {
     const summary = summarizeDefinition(bundledDefinition as unknown as AvatarDefinition)
 
     expect(summary).toEqual({
-      name: 'Peppa',
+      name: 'FatCat',
       bodyType: 'sphere',
       dimensions: '240 × 240 × 240',
-      bodyColor: '#5b7fe5',
+      bodyColor: '#f28c38',
       eyeColor: '#111316',
       expressionCount: 28,
       animationCount: 23,
@@ -23,7 +23,7 @@ describe('avatar data helpers', () => {
 
     expect(result.ok).toBe(true)
     if (result.ok) {
-      expect(result.definition.name).toBe('Peppa')
+      expect(result.definition.name).toBe('FatCat')
       expect(result.definition.animationOrder).toContain('thinking')
     }
   })

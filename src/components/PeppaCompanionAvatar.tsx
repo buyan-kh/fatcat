@@ -18,13 +18,13 @@ export function PeppaCompanionAvatar({ definition, state }: PeppaCompanionAvatar
     : avatarAnimationForState[state as CompanionState].animation
 
   return (
-    <div className="pet-avatar" data-peppa-state={state}>
+    <div className="pet-avatar" data-fatcat-state={state}>
       <Avatar
         key={state + '-' + animation}
         definition={definition}
         defaultAnimation={animation}
         size="184px"
-        ariaLabel={'Peppa is ' + state}
+        ariaLabel={'FatCat is ' + state}
       />
     </div>
   )
