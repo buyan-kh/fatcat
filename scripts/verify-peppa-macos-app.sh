@@ -27,6 +27,12 @@ fail() { echo "Packaging verification failed: $1" >&2; exit 1; }
 [[ -f "$CONTENTS/Resources/default-skills/README.md" ]] || fail "missing default skills"
 [[ -f "$AGENT_ROOT/PEPPA_HERMES_COMMIT" ]] || fail "missing pinned Hermes commit"
 [[ "$(<"$AGENT_ROOT/PEPPA_HERMES_COMMIT")" == "533886c8b8eb67ff8b389b7f48e7d5e5d9c575b9" ]] || fail "unexpected Hermes commit"
+[[ -f "$AGENT_ROOT/LICENSE" ]] || fail "missing Hermes MIT license"
+[[ ! -d "$AGENT_ROOT/.git" ]] || fail "Hermes git metadata leaked into app bundle"
+[[ ! -d "$AGENT_ROOT/node_modules" ]] || fail "Hermes node_modules leaked into app bundle"
+[[ ! -d "$AGENT_ROOT/apps" ]] || fail "unused Hermes apps leaked into app bundle"
+[[ ! -f "$AGENT_ROOT/.env" ]] || fail "Hermes environment file leaked into app bundle"
+[[ ! -f "$AGENT_ROOT/auth.json" ]] || fail "Hermes auth file leaked into app bundle"
 [[ ! -d "$RESOURCE_BUNDLE/WebApp" ]] || fail "browser dashboard leaked into app bundle"
 
 bundle_identifier="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$INFO_PLIST" 2>/dev/null)" || fail "missing bundle identifier"
