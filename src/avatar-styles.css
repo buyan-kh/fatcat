@@ -83,6 +83,49 @@ body {
   height: 100% !important;
   aspect-ratio: 1;
   pointer-events: none;
+  /* Uniform scale only: the body must stay circular while it breathes. */
+  transform: rotate(var(--fatcat-body-rotation, 0deg)) scale(var(--fatcat-body-scale, 1));
+  will-change: transform;
+}
+
+/*
+ * SVG transform origins below are expressed in user (viewBox) coordinates:
+ * 0 0 is the body center because the viewBox is -150 -150 300 300.
+ */
+.fatcat-avatar .bs-avatar__svg > g {
+  transform-origin: 0 0;
+  transform:
+    translateX(var(--fatcat-eye-offset-x, 0px))
+    rotate(var(--fatcat-eye-rotation, 0deg))
+    scale(var(--fatcat-eye-scale-x, 1), var(--fatcat-eye-scale-y, 1));
+}
+
+.fatcat-ears-follow {
+  transform-origin: 0 0;
+  transform:
+    translateY(var(--fatcat-ear-perk, 0px))
+    rotate(var(--fatcat-ear-rotation, 0deg))
+    scale(var(--fatcat-ear-scale, 1));
+}
+
+.fatcat-tail-follow {
+  transform-origin: 0 0;
+  transform: rotate(var(--fatcat-tail-base-rotation, 0deg)) scale(var(--fatcat-tail-scale, 1));
+}
+
+.fatcat-tail-drift {
+  transform-origin: 96px 53px;
+  transform: rotate(var(--fatcat-tail-mid-rotation, 0deg));
+}
+
+.fatcat-tail-tip {
+  transform-origin: 128px 108px;
+  transform: rotate(var(--fatcat-tail-tip-rotation, 0deg));
+}
+
+.fatcat-ear-left {
+  transform-origin: -75px -62px;
+  transform: rotate(var(--fatcat-ear-twitch, 0deg));
 }
 
 .fatcat-avatar .bs-avatar__svg {
@@ -95,9 +138,19 @@ body {
 }
 
 .fatcat-avatar-surface[data-animation="listening"] .fatcat-ears,
+.fatcat-avatar-surface[data-animation="happy"] .fatcat-ears,
 .fatcat-avatar-surface[data-animation="excited"] .fatcat-ears,
 .fatcat-avatar-surface[data-animation="celebrate"] .fatcat-ears {
   animation: fatcat-ears-perk 900ms ease-in-out infinite alternate;
+}
+
+.fatcat-avatar-surface[data-animation="curious"] .fatcat-ear-left {
+  transform: rotate(-7deg);
+}
+
+.fatcat-avatar-surface[data-animation="suspicious"] .fatcat-ear-right {
+  transform-origin: 75px -62px;
+  transform: rotate(8deg);
 }
 
 .fatcat-avatar-surface[data-animation="thinking"] .fatcat-ears,
@@ -108,6 +161,10 @@ body {
 .fatcat-avatar-surface[data-animation="sad"] .fatcat-ears,
 .fatcat-avatar-surface[data-animation="recovering"] .fatcat-ears {
   transform: translateY(3px) scaleY(.96);
+}
+
+.fatcat-avatar-surface[data-animation="sleeping"] .fatcat-ears {
+  transform: translateY(2px) scaleX(1.05) scaleY(.94);
 }
 
 .fatcat-avatar-surface[data-animation="happy"] .fatcat-tail,
