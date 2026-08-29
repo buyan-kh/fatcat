@@ -4,6 +4,10 @@ import { Avatar } from '@bible-strong/avatar-react'
 import type { AnimationKey, AvatarDefinition } from '@bible-strong/avatar-core'
 import bundledDefinition from '../public/strobi.avatar.json'
 import {
+  appendageScaleDelta,
+  earFollowRotationDelta,
+} from './lib/fatcat-attachment'
+import {
   CLICK_REACTION_DURATION_MS,
   FOLLOW_DELAY_MS,
   NEUTRAL_FOLLOW,
@@ -140,21 +144,25 @@ function FatCatAvatarSurface() {
         eyeScaleY *= reaction.eyeScaleY
         earPerk = Math.max(earPerk, reaction.earPerk)
       }
+      const bodyRotationDeg = pose.bodyRotationDeg + tilt
+      const earFollowDelta = earFollowRotationDelta(bodyRotationDeg, follow.earRotationDeg + earFlightTilt)
+      const tailBaseDelta = earFollowRotationDelta(bodyRotationDeg, follow.tailBaseDeg + tailBaseFlight)
+      const tailScaleDelta = appendageScaleDelta(bodyScale, tailScale)
+
       const style = frame.style
       style.setProperty('--fatcat-body-scale', bodyScale.toFixed(4))
-      style.setProperty('--fatcat-body-rotation', `${(pose.bodyRotationDeg + tilt).toFixed(3)}deg`)
+      style.setProperty('--fatcat-body-rotation', `${bodyRotationDeg.toFixed(3)}deg`)
       style.setProperty('--fatcat-eye-scale-x', pose.eyeScaleX.toFixed(4))
       style.setProperty('--fatcat-eye-scale-y', eyeScaleY.toFixed(4))
       style.setProperty('--fatcat-eye-rotation', `${pose.eyeRotationDeg.toFixed(3)}deg`)
       style.setProperty('--fatcat-eye-offset-x', `${pose.eyeOffsetX.toFixed(3)}px`)
-      style.setProperty('--fatcat-ear-rotation', `${(follow.earRotationDeg + earFlightTilt).toFixed(3)}deg`)
+      style.setProperty('--fatcat-ear-follow-rotation', `${earFollowDelta.toFixed(3)}deg`)
       style.setProperty('--fatcat-ear-twitch', `${twitch.toFixed(3)}deg`)
-      style.setProperty('--fatcat-ear-scale', follow.earScale.toFixed(4))
-      style.setProperty('--fatcat-ear-perk', `${(-6 * earPerk).toFixed(3)}px`)
-      style.setProperty('--fatcat-tail-base-rotation', `${(follow.tailBaseDeg + tailBaseFlight).toFixed(3)}deg`)
+      style.setProperty('--fatcat-ear-perk-rotation', `${(-5 * earPerk).toFixed(3)}deg`)
+      style.setProperty('--fatcat-tail-base-rotation', `${tailBaseDelta.toFixed(3)}deg`)
       style.setProperty('--fatcat-tail-mid-rotation', `${(follow.tailMidDeg - follow.tailBaseDeg + tailMidFlight - tailBaseFlight).toFixed(3)}deg`)
       style.setProperty('--fatcat-tail-tip-rotation', `${(follow.tailTipDeg - follow.tailMidDeg + tailTipFlight - tailMidFlight).toFixed(3)}deg`)
-      style.setProperty('--fatcat-tail-scale', tailScale.toFixed(4))
+      style.setProperty('--fatcat-tail-scale', tailScaleDelta.toFixed(4))
       request = requestAnimationFrame(apply)
     }
 
@@ -185,16 +193,14 @@ function FatCatAvatarSurface() {
               <path className="fatcat-tail-tip" d="M128 108c-8 14 2 25 15 19" />
             </g>
           </g>
-          <g className="fatcat-ears-follow">
-            <g className="fatcat-ears">
-              <g className="fatcat-ear-left">
-                <path className="fatcat-ear" d="M-105-62-84-130q3-10 11-1l38 69Z" />
-                <path className="fatcat-inner-ear" d="M-91-74-82-113-61-76Z" />
-              </g>
-              <g className="fatcat-ear-right">
-                <path className="fatcat-ear" d="M105-62 84-130q-3-10-11-1l-38 69Z" />
-                <path className="fatcat-inner-ear" d="M91-74 82-113 61-76Z" />
-              </g>
+          <g className="fatcat-ears">
+            <g className="fatcat-ear-left">
+              <path className="fatcat-ear" d="M-105-62-84-130q3-10 11-1l38 69Z" />
+              <path className="fatcat-inner-ear" d="M-91-74-82-113-61-76Z" />
+            </g>
+            <g className="fatcat-ear-right">
+              <path className="fatcat-ear" d="M105-62 84-130q-3-10-11-1l-38 69Z" />
+              <path className="fatcat-inner-ear" d="M91-74 82-113 61-76Z" />
             </g>
           </g>
         </svg>
