@@ -38,6 +38,9 @@ body {
   min-height: 0;
   aspect-ratio: 1;
   overflow: visible;
+  transform-origin: center center;
+  transform: rotate(var(--fatcat-body-rotation, 0deg)) scale(var(--fatcat-body-scale, 1));
+  will-change: transform;
 }
 
 .fatcat-appendages {
@@ -85,29 +88,143 @@ body {
   pointer-events: none;
 }
 
+/*
+ * SVG transform origins below are expressed in user (viewBox) coordinates:
+ * 0 0 is the body center because the viewBox is -150 -150 300 300.
+ */
+.fatcat-avatar .bs-avatar__svg > g {
+  transform-box: view-box;
+  transform-origin: 0 0;
+  transform:
+    translateX(var(--fatcat-eye-offset-x, 0px))
+    rotate(var(--fatcat-eye-rotation, 0deg))
+    scale(var(--fatcat-eye-scale-x, 1), var(--fatcat-eye-scale-y, 1));
+}
+
+.fatcat-tail-follow {
+  transform-box: view-box;
+  transform-origin: 96px 53px;
+  transform: rotate(var(--fatcat-tail-base-rotation, 0deg)) scale(var(--fatcat-tail-scale, 1));
+}
+
+.fatcat-tail-drift {
+  transform-box: view-box;
+  transform-origin: 96px 53px;
+  transform: rotate(var(--fatcat-tail-mid-rotation, 0deg));
+}
+
+.fatcat-tail-tip {
+  transform-box: view-box;
+  transform-origin: 128px 108px;
+  transform: rotate(var(--fatcat-tail-tip-rotation, 0deg));
+}
+
+.fatcat-ear-left,
+.fatcat-ear-right {
+  transform-box: view-box;
+}
+
+.fatcat-ear-left {
+  transform-origin: -75px -62px;
+  transform: rotate(calc(
+    var(--fatcat-ear-twitch, 0deg)
+    + var(--fatcat-ear-follow-rotation, 0deg)
+    + var(--fatcat-ear-perk-rotation, 0deg)
+  ));
+}
+
+.fatcat-ear-right {
+  transform-origin: 75px -62px;
+  transform: rotate(calc(
+    var(--fatcat-ear-twitch, 0deg)
+    + var(--fatcat-ear-follow-rotation, 0deg)
+    + var(--fatcat-ear-perk-rotation, 0deg)
+  ));
+}
+
 .fatcat-avatar .bs-avatar__svg {
   width: 100%;
   height: 100%;
 }
 
-.fatcat-ears {
-  transform-origin: 0 0;
+.fatcat-avatar-surface[data-animation="listening"] .fatcat-ear-left,
+.fatcat-avatar-surface[data-animation="happy"] .fatcat-ear-left,
+.fatcat-avatar-surface[data-animation="excited"] .fatcat-ear-left,
+.fatcat-avatar-surface[data-animation="celebrate"] .fatcat-ear-left {
+  animation: fatcat-ear-perk-left 900ms ease-in-out infinite alternate;
 }
 
-.fatcat-avatar-surface[data-animation="listening"] .fatcat-ears,
-.fatcat-avatar-surface[data-animation="excited"] .fatcat-ears,
-.fatcat-avatar-surface[data-animation="celebrate"] .fatcat-ears {
-  animation: fatcat-ears-perk 900ms ease-in-out infinite alternate;
+.fatcat-avatar-surface[data-animation="listening"] .fatcat-ear-right,
+.fatcat-avatar-surface[data-animation="happy"] .fatcat-ear-right,
+.fatcat-avatar-surface[data-animation="excited"] .fatcat-ear-right,
+.fatcat-avatar-surface[data-animation="celebrate"] .fatcat-ear-right {
+  animation: fatcat-ear-perk-right 900ms ease-in-out infinite alternate;
 }
 
-.fatcat-avatar-surface[data-animation="thinking"] .fatcat-ears,
-.fatcat-avatar-surface[data-animation="searching"] .fatcat-ears {
-  animation: fatcat-ear-think 1500ms ease-in-out infinite alternate;
+.fatcat-avatar-surface[data-animation="curious"] .fatcat-ear-left {
+  transform: rotate(calc(
+    var(--fatcat-ear-twitch, 0deg)
+    + var(--fatcat-ear-follow-rotation, 0deg)
+    + var(--fatcat-ear-perk-rotation, 0deg)
+    - 7deg
+  ));
 }
 
-.fatcat-avatar-surface[data-animation="sad"] .fatcat-ears,
-.fatcat-avatar-surface[data-animation="recovering"] .fatcat-ears {
-  transform: translateY(3px) scaleY(.96);
+.fatcat-avatar-surface[data-animation="suspicious"] .fatcat-ear-right {
+  transform: rotate(calc(
+    var(--fatcat-ear-twitch, 0deg)
+    + var(--fatcat-ear-follow-rotation, 0deg)
+    + var(--fatcat-ear-perk-rotation, 0deg)
+    + 8deg
+  ));
+}
+
+.fatcat-avatar-surface[data-animation="thinking"] .fatcat-ear-left,
+.fatcat-avatar-surface[data-animation="searching"] .fatcat-ear-left {
+  animation: fatcat-ear-think-left 1500ms ease-in-out infinite alternate;
+}
+
+.fatcat-avatar-surface[data-animation="thinking"] .fatcat-ear-right,
+.fatcat-avatar-surface[data-animation="searching"] .fatcat-ear-right {
+  animation: fatcat-ear-think-right 1500ms ease-in-out infinite alternate;
+}
+
+.fatcat-avatar-surface[data-animation="sad"] .fatcat-ear-left,
+.fatcat-avatar-surface[data-animation="recovering"] .fatcat-ear-left {
+  transform: rotate(calc(
+    var(--fatcat-ear-twitch, 0deg)
+    + var(--fatcat-ear-follow-rotation, 0deg)
+    + var(--fatcat-ear-perk-rotation, 0deg)
+    - 5deg
+  ));
+}
+
+.fatcat-avatar-surface[data-animation="sad"] .fatcat-ear-right,
+.fatcat-avatar-surface[data-animation="recovering"] .fatcat-ear-right {
+  transform: rotate(calc(
+    var(--fatcat-ear-twitch, 0deg)
+    + var(--fatcat-ear-follow-rotation, 0deg)
+    + var(--fatcat-ear-perk-rotation, 0deg)
+    + 5deg
+  ));
+}
+
+.fatcat-avatar-surface[data-animation="sleeping"] .fatcat-ear-left {
+  transform: rotate(calc(
+    var(--fatcat-ear-twitch, 0deg)
+    + var(--fatcat-ear-follow-rotation, 0deg)
+    + var(--fatcat-ear-perk-rotation, 0deg)
+    + 10deg
+  ));
+}
+
+.fatcat-avatar-surface[data-animation="sleeping"] .fatcat-ear-right {
+  transform: rotate(calc(
+    var(--fatcat-ear-twitch, 0deg)
+    + var(--fatcat-ear-follow-rotation, 0deg)
+    + var(--fatcat-ear-perk-rotation, 0deg)
+    - 10deg
+  ));
 }
 
 .fatcat-avatar-surface[data-animation="happy"] .fatcat-tail,
@@ -117,18 +234,28 @@ body {
 }
 
 .fatcat-avatar-surface[data-animation="sleeping"] .fatcat-tail {
-  transform: rotate(-9deg) translate(-2px, 5px);
+  transform: rotate(-9deg);
   transform-origin: 96px 53px;
 }
 
-@keyframes fatcat-ears-perk {
-  from { transform: translateY(1px) rotate(0deg); }
-  to { transform: translateY(-2px) rotate(1deg); }
+@keyframes fatcat-ear-perk-left {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(4deg); }
 }
 
-@keyframes fatcat-ear-think {
-  from { transform: rotate(-1deg); }
-  to { transform: rotate(1deg); }
+@keyframes fatcat-ear-perk-right {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(-4deg); }
+}
+
+@keyframes fatcat-ear-think-left {
+  from { transform: rotate(-2deg); }
+  to { transform: rotate(2deg); }
+}
+
+@keyframes fatcat-ear-think-right {
+  from { transform: rotate(2deg); }
+  to { transform: rotate(-2deg); }
 }
 
 @keyframes fatcat-tail-sway {

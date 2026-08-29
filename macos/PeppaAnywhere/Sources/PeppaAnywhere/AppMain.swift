@@ -162,6 +162,19 @@ private final class CaptureOutput: NSObject, SCStreamOutput {
     }
 }
 
+struct FlightCue: Equatable {
+    let phase: String
+    let tiltDegrees: Double
+    let durationMs: Double
+    let revision: Int
+}
+
+struct ReactionCue: Equatable {
+    let intensity: Double
+    let durationMs: Double
+    let revision: Int
+}
+
 struct ChatMessage: Identifiable, Equatable {
     let id: UUID
     let role: Role
@@ -198,12 +211,16 @@ final class PetModel: ObservableObject {
     @Published var selectedConversationID: String?
     @Published var isShowingHistory = false
     @Published var focusComposerToken = 0
+    @Published var flightCue: FlightCue?
+    @Published var reactionCue: ReactionCue?
+    var onLifeEvent: ((FatCatLifeEvent) -> Void)?
     var retryState = FatCatRetryState()
 
     func handleLife(_ event: FatCatLifeEvent, at now: Date = Date()) {
         var next = life
         next.handle(event, at: now)
         life = next
+        onLifeEvent?(event)
     }
 
     func appendUser(_ text: String) {
@@ -502,14 +519,18 @@ final class PeppaAgentClient: ObservableObject {
 }
 
 private final class FatCatAvatarWebView: WKWebView {
+    var onDragBegan: (() -> Void)?
+    var onDragEnded: (() -> Void)?
     private var dragMouse = NSPoint.zero
     private var dragOrigin = NSPoint.zero
+    private var isDraggingWindow = false
 
     override var acceptsFirstResponder: Bool { false }
 
     override func mouseDown(with event: NSEvent) {
         dragMouse = NSEvent.mouseLocation
         dragOrigin = window?.frame.origin ?? .zero
+        isDraggingWindow = false
         super.mouseDown(with: event)
     }
 
@@ -517,6 +538,10 @@ private final class FatCatAvatarWebView: WKWebView {
         guard let window else { return }
         let mouse = NSEvent.mouseLocation
         guard hypot(mouse.x - dragMouse.x, mouse.y - dragMouse.y) >= 4 else { return }
+        if !isDraggingWindow {
+            isDraggingWindow = true
+            onDragBegan?()
+        }
         let next = PetPosition.dragging(
             origin: PetPosition(x: dragOrigin.x, y: dragOrigin.y),
             startMouse: PetPosition(x: dragMouse.x, y: dragMouse.y),
@@ -524,11 +549,23 @@ private final class FatCatAvatarWebView: WKWebView {
         )
         window.setFrameOrigin(NSPoint(x: next.x, y: next.y))
     }
+
+    override func mouseUp(with event: NSEvent) {
+        if isDraggingWindow {
+            isDraggingWindow = false
+            onDragEnded?()
+        }
+        super.mouseUp(with: event)
+    }
 }
 
 struct FatCatAvatarView: NSViewRepresentable {
     let animationKey: String
+    let flightCue: FlightCue?
+    let reactionCue: ReactionCue?
     let onClick: () -> Void
+    let onDragBegan: () -> Void
+    let onDragEnded: () -> Void
 
     func makeCoordinator() -> Coordinator { Coordinator(onClick: onClick) }
 
@@ -554,6 +591,8 @@ struct FatCatAvatarView: NSViewRepresentable {
             return webView
         }
         webView.loadFileURL(avatarURL, allowingReadAccessTo: avatarURL.deletingLastPathComponent())
+        webView.onDragBegan = onDragBegan
+        webView.onDragEnded = onDragEnded
         context.coordinator.webView = webView
         context.coordinator.animationKey = animationKey
         return webView
@@ -563,7 +602,11 @@ struct FatCatAvatarView: NSViewRepresentable {
         context.coordinator.webView = webView
         context.coordinator.animationKey = animationKey
         context.coordinator.onClick = onClick
+        (webView as? FatCatAvatarWebView)?.onDragBegan = onDragBegan
+        (webView as? FatCatAvatarWebView)?.onDragEnded = onDragEnded
         context.coordinator.pushAnimationIfReady()
+        context.coordinator.pushFlightCueIfReady(flightCue)
+        context.coordinator.pushReactionCueIfReady(reactionCue)
     }
 
     static func dismantleNSView(_ nsView: WKWebView, coordinator: Coordinator) {
@@ -575,6 +618,10 @@ struct FatCatAvatarView: NSViewRepresentable {
         var animationKey = "idle"
         var onClick: () -> Void
         private var isSurfaceReady = false
+        private var lastFlightRevision = 0
+        private var pendingFlightCue: FlightCue?
+        private var lastReactionRevision = 0
+        private var pendingReactionCue: ReactionCue?
 
         init(onClick: @escaping () -> Void) { self.onClick = onClick }
 
@@ -599,6 +646,36 @@ struct FatCatAvatarView: NSViewRepresentable {
 
         func pushAnimationIfReady() {
             guard isSurfaceReady, let webView, let script = FatCatAvatarBridge.setAnimationJavaScript(animationKey) else { return }
+            webView.evaluateJavaScript(script, completionHandler: nil)
+            if let pendingFlightCue {
+                self.pendingFlightCue = nil
+                pushFlightCueIfReady(pendingFlightCue)
+            }
+            if let pendingReactionCue {
+                self.pendingReactionCue = nil
+                pushReactionCueIfReady(pendingReactionCue)
+            }
+        }
+
+        func pushFlightCueIfReady(_ cue: FlightCue?) {
+            guard let cue, cue.revision != lastFlightRevision else { return }
+            guard isSurfaceReady, let webView,
+                  let script = FatCatAvatarBridge.setFlightJavaScript(phase: cue.phase, tiltDegrees: cue.tiltDegrees, durationMs: cue.durationMs) else {
+                pendingFlightCue = cue
+                return
+            }
+            lastFlightRevision = cue.revision
+            webView.evaluateJavaScript(script, completionHandler: nil)
+        }
+
+        func pushReactionCueIfReady(_ cue: ReactionCue?) {
+            guard let cue, cue.revision != lastReactionRevision else { return }
+            guard isSurfaceReady, let webView,
+                  let script = FatCatAvatarBridge.setReactionJavaScript(intensity: cue.intensity, durationMs: cue.durationMs) else {
+                pendingReactionCue = cue
+                return
+            }
+            lastReactionRevision = cue.revision
             webView.evaluateJavaScript(script, completionHandler: nil)
         }
     }
@@ -1026,9 +1103,302 @@ private struct ConversationHistoryView: View {
     }
 }
 
+/// Moves the transparent FatCat panel along planned curved paths, entirely
+/// separate from the avatar's internal pose animation. All safety policy and
+/// path math lives in PeppaAnywhereCore; this class only gathers live context
+/// and drives the panel.
+@MainActor
+final class FatCatFlightController {
+    static let evaluationInterval: TimeInterval = 20
+    private static let minimumAttentionReactionInterval: TimeInterval = 1.5
+    private static let positionLockKey = "fatcat.positionLocked"
+    private static let movementPausedKey = "fatcat.movementPaused"
+
+    private let model: PetModel
+    private let positionStore: PetPositionStore
+    private let flightLog: FatCatFlightLog
+    private var machine = FatCatFlightStateMachine()
+    private var animator = FatCatWindowAnimator()
+    private var random: SeededRandomSource
+    private var currentPlan: FatCatFlightPlan?
+    private var flightStartedAt: Date?
+    private var lastFlightEndedAt: Date?
+    private var lastDragEndedAt: Date?
+    private var isDraggingPet = false
+    private var flightCueRevision = 0
+    private var reactionCueRevision = 0
+    private var lastAttentionReactionAt: Date?
+    private var pendingFlight = FatCatFlightCueQueue()
+    private var evaluationTask: Task<Void, Never>?
+    private var phaseTask: Task<Void, Never>?
+    private var frameTask: Task<Void, Never>?
+    private(set) var isAnimatingWindow = false
+    weak var panel: NSPanel?
+
+    init(model: PetModel, positionStore: PetPositionStore) {
+        self.model = model
+        self.positionStore = positionStore
+        let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("FatCat", isDirectory: true)
+        try? FileManager.default.createDirectory(at: support, withIntermediateDirectories: true)
+        flightLog = FatCatFlightLog(fileURL: support.appendingPathComponent("flight-log.json"))
+        let seed = ProcessInfo.processInfo.environment["FATCAT_FLIGHT_SEED"].flatMap(UInt64.init)
+            ?? UInt64(Date().timeIntervalSince1970 * 1000)
+        random = SeededRandomSource(seed: seed)
+        model.onLifeEvent = { [weak self] event in self?.handleLifeEvent(event) }
+    }
+
+    var isPositionLocked: Bool {
+        get { UserDefaults.standard.bool(forKey: Self.positionLockKey) }
+        set {
+            UserDefaults.standard.set(newValue, forKey: Self.positionLockKey)
+            if newValue { cancelFlight() }
+        }
+    }
+
+    var isMovementPaused: Bool {
+        get { UserDefaults.standard.bool(forKey: Self.movementPausedKey) }
+        set {
+            UserDefaults.standard.set(newValue, forKey: Self.movementPausedKey)
+            if newValue { cancelFlight() }
+        }
+    }
+
+    func start(panel: NSPanel) {
+        self.panel = panel
+        evaluationTask?.cancel()
+        evaluationTask = Task { [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(Self.evaluationInterval))
+                guard !Task.isCancelled else { return }
+                self?.flushPendingFlightIfSafe()
+            }
+        }
+    }
+
+    func stop() {
+        evaluationTask?.cancel()
+        cancelFlight()
+    }
+
+    func handleDragBegan() {
+        isDraggingPet = true
+        cancelFlight()
+    }
+
+    func handleDragEnded() {
+        isDraggingPet = false
+        lastDragEndedAt = Date()
+    }
+
+    func cancelFlight() {
+        phaseTask?.cancel()
+        frameTask?.cancel()
+        animator.cancel()
+        isAnimatingWindow = false
+        currentPlan = nil
+        flightStartedAt = nil
+        guard machine.state != .grounded else { return }
+        machine.cancel()
+        if machine.state == .settling {
+            sendFlightCue(phase: "settling")
+            phaseTask = Task { [weak self] in
+                try? await Task.sleep(for: .milliseconds(300))
+                guard !Task.isCancelled else { return }
+                self?.finishSettling()
+            }
+        } else {
+            sendFlightCue(phase: "grounded")
+        }
+    }
+
+    private func handleLifeEvent(_ event: FatCatLifeEvent) {
+        guard let cue = FatCatFlightEventPolicy.cue(for: event) else {
+            flushPendingFlightIfSafe()
+            return
+        }
+        sendReaction(cue.reaction)
+        if let reason = cue.flightReason { pendingFlight.enqueue(reason) }
+        flushPendingFlightIfSafe()
+    }
+
+    private func flushPendingFlightIfSafe() {
+        guard machine.state == .grounded,
+              let panel,
+              !model.isChatOpen,
+              let reason = pendingFlight.pendingReason else { return }
+        let lifeState = model.life.peppaState
+        guard FatCatFlightPolicy.allowsAutonomousFlight(for: lifeState) else { return }
+        let context = currentContext(now: Date())
+        guard FatCatFlightPolicy.evaluate(reason: reason, context: context) == .allowed else { return }
+        guard let screen = panel.screen ?? NSScreen.main else { return }
+        let preferred = positionStore.load().map { CGPoint(x: $0.x, y: $0.y) }
+        let plan = FatCatMovementPlanner.planFlight(
+            from: panel.frame.origin,
+            reason: reason,
+            visibleFrame: screen.visibleFrame,
+            petSize: panel.frame.size,
+            preferred: preferred,
+            random: &random
+        )
+        _ = pendingFlight.take()
+        beginFlight(plan)
+    }
+
+    private func beginFlight(_ plan: FatCatFlightPlan) {
+        guard machine.transition(to: .preparingToFly) else { return }
+        currentPlan = plan
+        sendFlightCue(phase: "preparing")
+        phaseTask = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(plan.anticipationDelay))
+            guard !Task.isCancelled else { return }
+            self?.launch(plan)
+        }
+    }
+
+    private func launch(_ plan: FatCatFlightPlan) {
+        // The desktop may have changed during anticipation; re-check safety.
+        guard FatCatFlightPolicy.evaluate(reason: plan.reason, context: currentContext(now: Date())) == .allowed else {
+            cancelFlight()
+            return
+        }
+        guard machine.transition(to: .flying) else { return }
+        let start = Date()
+        flightStartedAt = start
+        animator.start(plan, at: start)
+        isAnimatingWindow = true
+        let direction: Double = plan.destination.x >= plan.origin.x ? 1 : -1
+        sendFlightCue(phase: "flying", tiltDegrees: plan.maxTiltDegrees * direction, durationMs: plan.duration * 1000)
+        frameTask = Task { [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .milliseconds(16))
+                guard !Task.isCancelled else { return }
+                self?.tickFrame()
+            }
+        }
+    }
+
+    private func tickFrame() {
+        guard let panel, let plan = currentPlan, let flightStartedAt,
+              let frame = animator.frame(at: Date()) else {
+            frameTask?.cancel()
+            return
+        }
+        panel.setFrameOrigin(NSPoint(x: frame.position.x, y: frame.position.y))
+        let fraction = Date().timeIntervalSince(flightStartedAt) / plan.duration
+        if fraction > 0.85, machine.state == .flying {
+            machine.transition(to: .landing)
+            sendFlightCue(phase: "landing")
+        }
+        if frame.isFinished {
+            frameTask?.cancel()
+            finishFlight(plan)
+        }
+    }
+
+    private func finishFlight(_ plan: FatCatFlightPlan) {
+        animator.cancel()
+        isAnimatingWindow = false
+        if machine.state == .flying { machine.transition(to: .landing) }
+        machine.transition(to: .settling)
+        sendFlightCue(phase: "settling")
+        lastFlightEndedAt = Date()
+        try? flightLog.append(FatCatFlightLogEntry(reason: plan.reason, date: Date(), from: plan.origin, to: plan.destination))
+        if let panel {
+            positionStore.save(PetPosition(x: panel.frame.minX, y: panel.frame.minY))
+        }
+        currentPlan = nil
+        flightStartedAt = nil
+        phaseTask = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(plan.settleDuration))
+            guard !Task.isCancelled else { return }
+            self?.finishSettling()
+        }
+    }
+
+    private func finishSettling() {
+        machine.transition(to: .grounded)
+        sendFlightCue(phase: "grounded")
+    }
+
+    private func sendFlightCue(phase: String, tiltDegrees: Double = 0, durationMs: Double = 0) {
+        flightCueRevision += 1
+        model.flightCue = FlightCue(phase: phase, tiltDegrees: tiltDegrees, durationMs: durationMs, revision: flightCueRevision)
+    }
+
+    private func sendReaction(_ reaction: FatCatReaction) {
+        let now = Date()
+        if reaction == .attention,
+           let lastAttentionReactionAt,
+           now.timeIntervalSince(lastAttentionReactionAt) < Self.minimumAttentionReactionInterval { return }
+        if reaction == .attention { lastAttentionReactionAt = now }
+        let intensity: Double
+        switch reaction {
+        case .perk, .celebrate: intensity = 1.0
+        case .attention, .recoil: intensity = 0.65
+        }
+        reactionCueRevision += 1
+        model.reactionCue = ReactionCue(intensity: intensity, durationMs: 650, revision: reactionCueRevision)
+    }
+
+    private func currentContext(now: Date) -> FatCatFlightContext {
+        var context = FatCatFlightContext()
+        context.isTyping = CGEventSource.secondsSinceLastEventType(.combinedSessionState, eventType: .keyDown) < 2
+        context.isDraggingPet = isDraggingPet
+        context.isChatFocused = model.isChatOpen
+        context.isSpeaking = model.isGenerating
+        context.isListening = model.life.work == .listening
+        context.isWaitingForPermission = model.life.work == .asking
+        context.isMeetingActive = Self.frontmostIsMeetingApp()
+        context.isFullscreenMediaActive = Self.frontmostWindowIsFullscreen()
+        context.isMovementPaused = isMovementPaused
+        context.isPositionLocked = isPositionLocked
+        context.isAsleep = model.life.asleep || model.life.observationPaused
+        context.isReduceMotionEnabled = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+        context.isHermesDelicate = model.life.work == .acting || model.life.work == .verifying
+        context.secondsSinceLastFlight = lastFlightEndedAt.map { now.timeIntervalSince($0) } ?? .infinity
+        context.secondsSinceManualDrag = lastDragEndedAt.map { now.timeIntervalSince($0) } ?? .infinity
+        context.secondsSinceUserActivity = Self.secondsSinceUserActivity()
+        return context
+    }
+
+    private static func secondsSinceUserActivity() -> TimeInterval {
+        let events: [CGEventType] = [.keyDown, .leftMouseDown, .rightMouseDown, .mouseMoved, .scrollWheel, .leftMouseDragged]
+        return events.map { CGEventSource.secondsSinceLastEventType(.combinedSessionState, eventType: $0) }.min() ?? .infinity
+    }
+
+    private static let meetingBundleIDs: Set<String> = [
+        "us.zoom.xos",
+        "com.microsoft.teams",
+        "com.microsoft.teams2",
+        "com.cisco.webexmeetingsapp",
+        "com.webex.meetingmanager",
+        "com.apple.FaceTime",
+    ]
+
+    private static func frontmostIsMeetingApp() -> Bool {
+        guard let bundleID = NSWorkspace.shared.frontmostApplication?.bundleIdentifier else { return false }
+        return meetingBundleIDs.contains(bundleID)
+    }
+
+    private static func frontmostWindowIsFullscreen() -> Bool {
+        guard let app = NSWorkspace.shared.frontmostApplication else { return false }
+        let windows = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]] ?? []
+        guard let front = windows.first(where: {
+            ($0[kCGWindowOwnerPID as String] as? NSNumber)?.int32Value == app.processIdentifier
+                && (($0[kCGWindowLayer as String] as? NSNumber)?.intValue ?? -1) == 0
+        }), let boundsDict = front[kCGWindowBounds as String] as? NSDictionary,
+           let bounds = CGRect(dictionaryRepresentation: boundsDict) else { return false }
+        return NSScreen.screens.contains { screen in
+            bounds.width >= screen.frame.width && bounds.height >= screen.frame.height
+        }
+    }
+}
+
 struct PetRootView: View {
     @ObservedObject var model: PetModel
     let onClick: () -> Void
+    let onDragBegan: () -> Void
+    let onDragEnded: () -> Void
     let onSend: () -> Void
     let onRetry: () -> Void
     let onReconnect: () -> Void
@@ -1044,11 +1414,11 @@ struct PetRootView: View {
         Group {
             if model.isChatOpen {
                 HStack(alignment: .bottom, spacing: 12) {
-                    FatCatAvatarView(animationKey: model.life.animationKey, onClick: onClick).frame(width: 200, height: 200)
+                    FatCatAvatarView(animationKey: model.life.animationKey, flightCue: model.flightCue, reactionCue: model.reactionCue, onClick: onClick, onDragBegan: onDragBegan, onDragEnded: onDragEnded).frame(width: 200, height: 200)
                     ChatBubble(model: model, onSend: onSend, onRetry: onRetry, onReconnect: onReconnect, onStop: onStop, onClose: onClose, onExpand: onExpand, onNewChat: onNewChat, onSelectConversation: onSelectConversation, onDeleteConversation: onDeleteConversation, onRenameConversation: onRenameConversation)
                 }.padding(14)
             } else {
-                FatCatAvatarView(animationKey: model.life.animationKey, onClick: onClick).frame(width: 220, height: 220)
+                FatCatAvatarView(animationKey: model.life.animationKey, flightCue: model.flightCue, reactionCue: model.reactionCue, onClick: onClick, onDragBegan: onDragBegan, onDragEnded: onDragEnded).frame(width: 220, height: 220)
             }
         }.background(Color.clear)
     }
@@ -1083,12 +1453,14 @@ final class PetWindowController: NSObject, NSWindowDelegate {
     private var statusItem: NSStatusItem!
     private var secondaryWindows: [NSWindow] = []
     private var cancellables = Set<AnyCancellable>()
+    private var flightController: FatCatFlightController!
 
     init(perception: ScreenPerceptionCoordinator) {
         self.perception = perception
         auditStore = nil
         conversationStore = Self.makeConversationStore()
         super.init()
+        flightController = FatCatFlightController(model: model, positionStore: positionStore)
         model.conversations = conversationStore.records
         model.selectedConversationID = conversationStore.selectedID
         perception.onObservation = { [weak self] observation in
@@ -1134,9 +1506,11 @@ final class PetWindowController: NSObject, NSWindowDelegate {
             panel.setFrameOrigin(NSPoint(x: screen.midX - 110, y: screen.minY + 80))
         }
         panel.orderFrontRegardless()
+        flightController.start(panel: panel)
     }
 
     func stop() {
+        flightController.stop()
         positionStore.save(PetPosition(x: panel.frame.minX, y: panel.frame.minY))
         agent.stop()
     }
@@ -1151,7 +1525,7 @@ final class PetWindowController: NSObject, NSWindowDelegate {
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         panel.isMovableByWindowBackground = true
         panel.hidesOnDeactivate = false
-        panel.contentView = NSHostingView(rootView: PetRootView(model: model, onClick: { [weak self] in self?.openChat() }, onSend: { [weak self] in self?.sendChat() }, onRetry: { [weak self] in self?.retryLastPrompt() }, onReconnect: { [weak self] in self?.agent.reconnect() }, onStop: { [weak self] in self?.stopGeneration() }, onClose: { [weak self] in self?.closeChat() }, onExpand: { [weak self] in self?.toggleExpanded() }, onNewChat: { [weak self] in self?.newChat() }, onSelectConversation: { [weak self] record in self?.selectConversation(record) }, onDeleteConversation: { [weak self] record in self?.deleteConversation(record) }, onRenameConversation: { [weak self] record, title in self?.renameConversation(record, title: title) }))
+        panel.contentView = NSHostingView(rootView: PetRootView(model: model, onClick: { [weak self] in self?.openChat() }, onDragBegan: { [weak self] in self?.flightController.handleDragBegan() }, onDragEnded: { [weak self] in self?.flightController.handleDragEnded() }, onSend: { [weak self] in self?.sendChat() }, onRetry: { [weak self] in self?.retryLastPrompt() }, onReconnect: { [weak self] in self?.agent.reconnect() }, onStop: { [weak self] in self?.stopGeneration() }, onClose: { [weak self] in self?.closeChat() }, onExpand: { [weak self] in self?.toggleExpanded() }, onNewChat: { [weak self] in self?.newChat() }, onSelectConversation: { [weak self] record in self?.selectConversation(record) }, onDeleteConversation: { [weak self] record in self?.deleteConversation(record) }, onRenameConversation: { [weak self] record, title in self?.renameConversation(record, title: title) }))
     }
 
     private func buildStatusItem() {
@@ -1162,6 +1536,8 @@ final class PetWindowController: NSObject, NSWindowDelegate {
 
     private func openChat() {
         guard !model.isChatOpen else { return }
+        flightController.cancelFlight()
+        model.handleLife(.userClickedAvatar)
         model.isChatOpen = true
         model.handleLife(.userOpenedChat)
         panel.setContentSize(NSSize(width: 660, height: 555))
@@ -1486,6 +1862,12 @@ final class PetWindowController: NSObject, NSWindowDelegate {
         menu.items[3].keyEquivalentModifierMask = [.command, .shift]
         menu.addItem(.separator())
         menu.addItem(NSMenuItem(title: perception.isPaused ? "Resume Observation" : "Pause Observation", action: #selector(toggleObservation), keyEquivalent: ""))
+        let lockItem = NSMenuItem(title: "Lock Position", action: #selector(togglePositionLock), keyEquivalent: "")
+        lockItem.state = flightController.isPositionLocked ? .on : .off
+        menu.addItem(lockItem)
+        let pauseMovementItem = NSMenuItem(title: "Pause Movement", action: #selector(toggleMovementPaused), keyEquivalent: "")
+        pauseMovementItem.state = flightController.isMovementPaused ? .on : .off
+        menu.addItem(pauseMovementItem)
         menu.addItem(.separator())
         menu.addItem(NSMenuItem(title: "Settings", action: #selector(showSettings), keyEquivalent: ","))
         menu.addItem(NSMenuItem(title: "Memory", action: #selector(showMemory), keyEquivalent: ""))
@@ -1506,6 +1888,16 @@ final class PetWindowController: NSObject, NSWindowDelegate {
         guard let text = model.messages.last(where: { $0.role == .assistant })?.text else { return }
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(text, forType: .string)
+    }
+
+    @objc private func togglePositionLock() {
+        flightController.isPositionLocked.toggle()
+        statusItem.menu = makeMenu()
+    }
+
+    @objc private func toggleMovementPaused() {
+        flightController.isMovementPaused.toggle()
+        statusItem.menu = makeMenu()
     }
 
     @objc private func toggleObservation() {
@@ -1573,7 +1965,11 @@ final class PetWindowController: NSObject, NSWindowDelegate {
         secondaryWindows.append(window)
     }
 
-    func windowDidMove(_ notification: Notification) { positionStore.save(PetPosition(x: panel.frame.minX, y: panel.frame.minY)) }
+    func windowDidMove(_ notification: Notification) {
+        // Autonomous flight saves its own landing spot; only persist user moves.
+        guard !flightController.isAnimatingWindow else { return }
+        positionStore.save(PetPosition(x: panel.frame.minX, y: panel.frame.minY))
+    }
 
 }
 

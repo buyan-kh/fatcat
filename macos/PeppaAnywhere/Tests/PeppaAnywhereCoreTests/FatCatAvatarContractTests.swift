@@ -17,6 +17,11 @@ struct FatCatAvatarContractTests {
         #expect(FatCatAvatarBridge.setAnimationJavaScript(#"bad"key"#) == #"window.fatCatAvatar?.setAnimation("bad\"key");"#)
     }
 
+    @Test func reactionCueJavaScriptIsWellFormedAndEscaped() {
+        #expect(FatCatAvatarBridge.setReactionJavaScript(intensity: 0.8, durationMs: 650) == "window.fatCatAvatar?.setReaction(0.8, 650.0);")
+        #expect(FatCatAvatarBridge.setReactionJavaScript(intensity: .nan, durationMs: 650) == nil)
+    }
+
     @Test func productionDefinitionKeepsTheOriginalRoundGeometryAndCatalog() throws {
         let definition = try loadJSON("public/strobi.avatar.json")
         let body = try #require(definition["body"] as? [String: Any])
@@ -74,6 +79,15 @@ struct FatCatAvatarContractTests {
         #expect(!appMain.contains("RealityKit"))
         #expect(manifest.contains("exclude: [\"PeppaAvatar.swift\"]"))
         #expect(manifest.contains("Resources/FatCatAvatar"))
+    }
+
+    @Test func productPathUsesEventLedFlightAndReactionCues() throws {
+        let appMain = try loadText("macos/PeppaAnywhere/Sources/PeppaAnywhere/AppMain.swift")
+
+        #expect(appMain.contains("onLifeEvent"))
+        #expect(appMain.contains("reactionCue"))
+        #expect(appMain.contains("flushPendingFlightIfSafe"))
+        #expect(!appMain.contains("reason = .idleReposition"))
     }
 
     private func loadJSON(_ relativePath: String) throws -> [String: Any] {
