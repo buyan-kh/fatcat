@@ -90,3 +90,13 @@ button, input, textarea { font: inherit; }
 
 .app-drag { -webkit-app-region: drag; }
 .app-no-drag, .app-drag button, .app-drag input { -webkit-app-region: no-drag; }
+
+.fatcat-markdown > :first-child { margin-top: 0; }
+.fatcat-markdown > :last-child { margin-bottom: 0; }
+.fatcat-markdown p { margin: 0.45rem 0; }
+.fatcat-markdown ul, .fatcat-markdown ol { margin: 0.5rem 0; padding-left: 1.25rem; }
+.fatcat-markdown ul { list-style: disc; }
+.fatcat-markdown ol { list-style: decimal; }
+.fatcat-markdown blockquote { margin: 0.75rem 0; border-left: 2px solid var(--border); padding-left: 0.75rem; color: var(--muted-foreground); }
+.fatcat-markdown table { width: 100%; border-collapse: collapse; font-size: 0.8rem; }
+.fatcat-markdown th, .fatcat-markdown td { border-bottom: 1px solid var(--border); padding: 0.4rem 0.5rem; text-align: left; }
