@@ -1,4 +1,5 @@
 @import "tailwindcss";
+@import "tw-animate-css";
 
 @custom-variant dark (&:where(.dark, .dark *));
 
@@ -86,3 +87,6 @@ body {
 }
 
 button, input, textarea { font: inherit; }
+
+.app-drag { -webkit-app-region: drag; }
+.app-no-drag, .app-drag button, .app-drag input { -webkit-app-region: no-drag; }
