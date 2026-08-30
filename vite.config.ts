@@ -17,6 +17,6 @@ export default defineConfig({
   ],
   base: './',
   test: {
-    exclude: ['**/node_modules/**', '**/.build/**', '**/vendor/**'],
+    exclude: ['**/node_modules/**', '**/.build/**', '**/vendor/**', 'electron/**'],
   },
 })

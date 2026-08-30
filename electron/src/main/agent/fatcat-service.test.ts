@@ -45,6 +45,7 @@ describe('FatCatService', () => {
 
     transport.event({ version: 1, type: 'assistant_delta', request_id: requestId(turn!), session_id: 's1', text: 'Hello ' })
     transport.event({ version: 1, type: 'assistant_delta', request_id: requestId(turn!), session_id: 's1', text: 'back.' })
+    transport.event({ version: 1, type: 'plan', request_id: requestId(turn!), session_id: 's1', steps: ['Inspect the workspace'] })
     transport.event({ version: 1, type: 'tool_call', request_id: 'tool-1', name: 'read_file', arguments: { path: 'README.md' } })
     transport.event({ version: 1, type: 'action_result', request_id: 'tool-1', success: true, detail: 'Read complete.' })
     transport.event({ version: 1, type: 'state', state: 'completed', session_id: 's1', request_id: requestId(turn!) })
@@ -53,6 +54,7 @@ describe('FatCatService', () => {
       const snapshot = await service.snapshot()
       expect(snapshot.isGenerating).toBe(false)
       expect(snapshot.messages.at(-1)).toMatchObject({ role: 'assistant', text: 'Hello back.', isStreaming: false })
+      expect(snapshot.messages.at(-1)?.activities.find((activity) => activity.kind === 'plan')).toMatchObject({ status: 'completed' })
       expect(snapshot.messages.at(-1)?.activities.find((activity) => activity.label === 'read_file')).toMatchObject({ status: 'completed' })
     })
   })

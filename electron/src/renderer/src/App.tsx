@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import type { AgentDiagnostics } from '@shared/api'
 import { AppSidebar } from '@renderer/components/app-sidebar'
 import { ConversationHeader } from '@renderer/components/conversation-header'
@@ -8,6 +8,7 @@ import { Transcript } from '@renderer/components/transcript'
 import { Button } from '@renderer/components/ui/button'
 import { TooltipProvider } from '@renderer/components/ui/tooltip'
 import { useFatCat } from '@renderer/hooks/use-fatcat'
+import { useAppearance } from '@renderer/hooks/use-appearance'
 
 export default function App() {
   const { state, commands } = useFatCat()
@@ -16,11 +17,7 @@ export default function App() {
   const [diagnostics, setDiagnostics] = useState<AgentDiagnostics>()
   const snapshot = state.snapshot
   const selected = snapshot?.conversations.find((conversation) => conversation.id === snapshot.selectedId)
-
-  useEffect(() => {
-    if (!snapshot) return
-    applyAppearance(snapshot.appearance)
-  }, [snapshot?.appearance])
+  useAppearance(snapshot?.appearance)
 
   const openSettings = () => {
     setSettingsOpen(true)
@@ -90,9 +87,4 @@ export default function App() {
       </main>
     </TooltipProvider>
   )
-}
-
-function applyAppearance(appearance: 'system' | 'light' | 'dark'): void {
-  const dark = appearance === 'dark' || (appearance === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches)
-  document.documentElement.classList.toggle('dark', dark)
 }

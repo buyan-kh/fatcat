@@ -1,4 +1,6 @@
-import { FolderOpen, WifiHigh, WifiSlash } from '@phosphor-icons/react'
+import { FolderOpen } from '@phosphor-icons/react/FolderOpen'
+import { WifiHigh } from '@phosphor-icons/react/WifiHigh'
+import { WifiSlash } from '@phosphor-icons/react/WifiSlash'
 import type { ConnectionStatus, ConversationRecord } from '@shared/chat'
 import { Button } from '@renderer/components/ui/button'
 import { cn } from '@renderer/lib/utils'

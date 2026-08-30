@@ -1,4 +1,5 @@
-import { ArrowClockwise, Copy } from '@phosphor-icons/react'
+import { ArrowClockwise } from '@phosphor-icons/react/ArrowClockwise'
+import { Copy } from '@phosphor-icons/react/Copy'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import type { ChatMessage } from '@shared/chat'

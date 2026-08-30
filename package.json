@@ -7,6 +7,9 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "build:avatar": "vite build --config vite.avatar.config.ts",
+    "electron:dev": "npm --prefix electron run dev",
+    "electron:test": "npm --prefix electron test",
+    "electron:build": "npm --prefix electron run build",
     "test": "vitest run",
     "test:watch": "vitest",
     "lint": "tsc -b --pretty false"

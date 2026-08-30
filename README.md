@@ -39,6 +39,30 @@ npm install
 Text conversations persist locally and resume their Hermes ACP session after a
 relaunch. A working Hermes provider is required for real responses.
 
+## Electron main window
+
+The new main window is a separate Electron app. It owns its own private Hermes
+agent process, app data, conversations, and session socket; the existing native
+floating cat remains unchanged. In this phase the two apps must not share a
+live agent socket.
+
+Install and start the Electron client from the repository root:
+
+```bash
+npm --prefix electron install
+FATCAT_AGENT_PATH=/absolute/path/to/PeppaAgent npm run electron:dev
+```
+
+`FATCAT_AGENT_PATH` must point to an executable bundled `PeppaAgent` launcher.
+When it is omitted during repository development, FatCat looks for
+`agent/peppa_agent/PeppaAgent`; that launcher still requires its bundled Python
+runtime. `FATCAT_HERMES_PATH` can optionally select a separate Hermes home.
+
+The Electron-only checks are available as `npm run electron:test` and
+`npm run electron:build`. The conditional real-agent smoke test creates a
+Hermes session without sending a paid model prompt, and is skipped unless
+`FATCAT_AGENT_PATH` is configured.
+
 ## Verify
 
 ```bash

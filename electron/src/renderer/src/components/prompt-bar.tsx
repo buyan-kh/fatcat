@@ -1,5 +1,7 @@
 import { useState } from 'react'
-import { ArrowUp, FolderOpen, Stop } from '@phosphor-icons/react'
+import { ArrowUp } from '@phosphor-icons/react/ArrowUp'
+import { FolderOpen } from '@phosphor-icons/react/FolderOpen'
+import { Stop } from '@phosphor-icons/react/Stop'
 import { Button } from '@renderer/components/ui/button'
 import { Textarea } from '@renderer/components/ui/textarea'
 

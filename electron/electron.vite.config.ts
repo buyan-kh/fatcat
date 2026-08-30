@@ -13,6 +13,11 @@ export default defineConfig({
   preload: {
     plugins: [externalizeDepsPlugin()],
     resolve: { alias: { '@shared': path.join(source, 'shared') } },
+    build: {
+      rollupOptions: {
+        output: { format: 'cjs', entryFileNames: '[name].cjs' },
+      },
+    },
   },
   renderer: {
     root: path.join(source, 'renderer'),

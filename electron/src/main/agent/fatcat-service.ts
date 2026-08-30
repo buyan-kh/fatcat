@@ -286,6 +286,16 @@ export class FatCatService extends EventEmitter {
       activity.label = stateLabel(state)
       activity.status = state
     }
+    if (state === 'completed') {
+      assistant.activities.forEach((item) => {
+        if (item.kind === 'plan' && item.status === 'working') item.status = 'completed'
+      })
+    }
+    if (state === 'failed') {
+      assistant.activities.forEach((item) => {
+        if (item.status === 'working') item.status = 'failed'
+      })
+    }
     if (state === 'failed') assistant.errorMessage ??= 'Hermes could not complete this turn.'
   }
 

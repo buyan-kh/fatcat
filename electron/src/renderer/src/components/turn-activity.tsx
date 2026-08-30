@@ -1,5 +1,10 @@
 import { useState } from 'react'
-import { Brain, CaretDown, CheckCircle, Code, SpinnerGap, XCircle } from '@phosphor-icons/react'
+import { Brain } from '@phosphor-icons/react/Brain'
+import { CaretDown } from '@phosphor-icons/react/CaretDown'
+import { CheckCircle } from '@phosphor-icons/react/CheckCircle'
+import { Code } from '@phosphor-icons/react/Code'
+import { SpinnerGap } from '@phosphor-icons/react/SpinnerGap'
+import { XCircle } from '@phosphor-icons/react/XCircle'
 import type { TurnActivity as TurnActivityModel } from '@shared/chat'
 import { cn } from '@renderer/lib/utils'
 

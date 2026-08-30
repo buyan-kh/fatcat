@@ -1,13 +1,11 @@
 import { useMemo, useState } from 'react'
-import {
-  DotsThree,
-  GearSix,
-  MagnifyingGlass,
-  PencilSimple,
-  Plus,
-  SidebarSimple,
-  Trash,
-} from '@phosphor-icons/react'
+import { DotsThree } from '@phosphor-icons/react/DotsThree'
+import { GearSix } from '@phosphor-icons/react/GearSix'
+import { MagnifyingGlass } from '@phosphor-icons/react/MagnifyingGlass'
+import { PencilSimple } from '@phosphor-icons/react/PencilSimple'
+import { Plus } from '@phosphor-icons/react/Plus'
+import { SidebarSimple } from '@phosphor-icons/react/SidebarSimple'
+import { Trash } from '@phosphor-icons/react/Trash'
 import type { ConnectionStatus, ConversationRecord } from '@shared/chat'
 import { Button } from '@renderer/components/ui/button'
 import {
