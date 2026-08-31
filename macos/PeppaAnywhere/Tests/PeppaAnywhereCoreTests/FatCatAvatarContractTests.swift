@@ -90,6 +90,12 @@ struct FatCatAvatarContractTests {
         #expect(!appMain.contains("reason = .idleReposition"))
     }
 
+    @Test func nativeWindowConnectsHermesWhenItIsShown() throws {
+        let appMain = try loadText("macos/PeppaAnywhere/Sources/PeppaAnywhere/AppMain.swift")
+
+        #expect(appMain.contains("panel.orderFrontRegardless()\n        agent.requestProviderInventory()\n        flightController.start(panel: panel)"))
+    }
+
     private func loadJSON(_ relativePath: String) throws -> [String: Any] {
         let data = try Data(contentsOf: repositoryRoot.appendingPathComponent(relativePath))
         return try #require(JSONSerialization.jsonObject(with: data) as? [String: Any])
