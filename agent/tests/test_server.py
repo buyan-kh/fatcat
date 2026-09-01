@@ -8,7 +8,7 @@ from types import SimpleNamespace
 
 from pathlib import Path
 
-from peppa_agent.server import PeppaAgentServer, PeppaAgentSession
+from peppa_agent.server import PeppaAgentServer, PeppaAgentSession, _FatCatACPBridge
 
 
 class MissingProviderAgentSession(PeppaAgentSession):
@@ -17,6 +17,25 @@ class MissingProviderAgentSession(PeppaAgentSession):
 
 
 class ServerTests(unittest.IsolatedAsyncioTestCase):
+    async def test_history_replay_does_not_emit_live_stream_events_without_a_request(self):
+        events = []
+
+        async def emit(event):
+            events.append(event)
+
+        server = PeppaAgentServer(Path("/tmp/peppa-test.sock"), Path("/tmp/peppa-test-home"))
+        session = PeppaAgentSession("session-1", ".", emit, asyncio.get_running_loop())
+        server.sessions["session-1"] = session
+        bridge = _FatCatACPBridge(server)
+        update = SimpleNamespace(
+            session_update="agent_message_chunk",
+            content=SimpleNamespace(text="restored history"),
+        )
+
+        await bridge.session_update("session-1", update)
+
+        self.assertEqual(events, [])
+
     async def test_live_agent_socket_is_never_replaced_but_stale_socket_is_recovered(self):
         with tempfile.TemporaryDirectory() as root:
             socket_path = Path(root) / "fatcat.sock"

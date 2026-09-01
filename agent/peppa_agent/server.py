@@ -189,6 +189,11 @@ class _FatCatACPBridge:
         if session is None:
             return
         request_id = session.current_request_id
+        # Hermes replays saved ACP updates while a session is loading. The
+        # explicit session_history records below own that path; only an active
+        # prompt may produce live streaming/tool events.
+        if request_id is None:
+            return
         kind = getattr(update, "session_update", "")
         if kind == "agent_message_chunk":
             text = getattr(getattr(update, "content", None), "text", None)
