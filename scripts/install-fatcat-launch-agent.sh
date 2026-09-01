@@ -71,7 +71,18 @@ mv "${temporary_plist}" "${plist_path}"
 trap - EXIT
 
 launchctl bootout "${domain}/${label}" 2>/dev/null || true
-launchctl bootstrap "${domain}" "${plist_path}"
+bootstrapped=0
+for attempt in 1 2 3 4 5; do
+  if launchctl bootstrap "${domain}" "${plist_path}" 2>/dev/null; then
+    bootstrapped=1
+    break
+  fi
+  sleep 0.25
+done
+if [[ "${bootstrapped}" -ne 1 ]]; then
+  echo "FatCat Agent could not be registered with launchd." >&2
+  exit 1
+fi
 launchctl kickstart -k "${domain}/${label}"
 
 echo "FatCat Agent is running at ${socket_path}"
