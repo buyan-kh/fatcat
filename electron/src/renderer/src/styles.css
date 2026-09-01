@@ -104,6 +104,16 @@ button, input, textarea { font: inherit; }
   line-height: 1rem;
 }
 .nav-control { height: 36px; border-radius: 10px; }
+.thinking-shimmer {
+  background: linear-gradient(90deg, var(--muted-foreground) 35%, var(--foreground) 50%, var(--muted-foreground) 65%);
+  background-size: 200% 100%;
+  background-clip: text;
+  color: transparent;
+  animation: fatcat-shimmer 1.4s linear infinite;
+}
+.thinking-settled { animation: fatcat-fade-in 350ms ease-out both; }
+@keyframes fatcat-shimmer { to { background-position: -200% 0; } }
+@keyframes fatcat-fade-in { from { opacity: 0; } to { opacity: 1; } }
 
 .app-drag { -webkit-app-region: drag; }
 .app-no-drag, .app-drag button, .app-drag input { -webkit-app-region: no-drag; }

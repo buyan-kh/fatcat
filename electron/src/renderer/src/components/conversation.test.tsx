@@ -29,9 +29,17 @@ describe('conversation experience', () => {
     render(<MessageRow message={assistant} onCopy={vi.fn()} onRetry={vi.fn()} />)
     expect(screen.getByText('FatCat', { selector: 'strong' })).toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'docs' })).toHaveAttribute('href', 'https://example.com')
+    expect(screen.getByRole('button', { name: 'Ran 1 tool' })).toHaveAttribute('aria-expanded', 'false')
+    await user.click(screen.getByRole('button', { name: 'Ran 1 tool' }))
     await user.click(screen.getByRole('button', { name: /read_file/ }))
     expect(screen.getByText('README.md', { selector: 'code' })).toBeInTheDocument()
     expect(screen.getByText('Read complete.')).toBeInTheDocument()
+  })
+
+  it('shows a live thinking label and expands active traces automatically', () => {
+    render(<MessageRow message={{ ...assistant, activities: [{ ...assistant.activities[0], status: 'working' }] }} onCopy={vi.fn()} onRetry={vi.fn()} />)
+    expect(screen.getByRole('button', { name: 'Running tools' })).toHaveAttribute('aria-expanded', 'true')
+    expect(screen.getByRole('button', { name: /read_file/ })).toBeInTheDocument()
   })
 
   it('sends with Return, preserves Shift-Return, and switches to Stop while generating', async () => {
