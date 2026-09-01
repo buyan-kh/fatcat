@@ -1,5 +1,15 @@
 # Peppa Anywhere
 
+## FatCat/Hermes boundary
+
+In the FatCat product, this avatar is a surface for Hermes rather than a
+second agent. Hermes is the source of truth for sessions, history, memory,
+planning, and tools. FatCat adapts Hermes events to the pet, mini chat,
+Electron, and other channels, while enforcing native macOS permissions,
+approval, execution, and independent verification. Local FatCat storage is
+limited to UI/session metadata; legacy local memory, goals, learning, and
+transcript content are retired and are never imported into Hermes.
+
 Peppa is a portable Bible Strong avatar definition. This guide shows how to put the same little blue pet into other React projects: assistants, empty states, onboarding, buttons, loading screens, docs, and prototypes.
 
 The source of truth is [`public/strobi.avatar.json`](../public/strobi.avatar.json). The filename is kept for compatibility with the original lab export; the definition itself is named `Peppa`.

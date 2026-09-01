@@ -50,8 +50,10 @@ Playful / Off movement, spoken replies, and animation preview live in Settings.
 Microphone and Speech Recognition access are requested only when voice input is
 used.
 
-Text conversations persist locally and resume their Hermes ACP session after a
-relaunch. A working Hermes provider is required for real responses. To remove
+Text conversations resume their Hermes ACP session after a relaunch. FatCat
+stores only conversation/session handles and UI preferences; Hermes is the
+source of truth for message history, memory, planning, and tools. A working
+Hermes provider is required for real responses. To remove
 the background registration without deleting conversations or Hermes data:
 
 ```bash
@@ -62,8 +64,8 @@ the background registration without deleting conversations or Hermes data:
 
 The Electron app is the full conversation workspace. It connects to the same
 FatCat Agent as the native pet, so both clients share the selected conversation,
-messages, streaming state, and Hermes session. Electron never starts or stops
-the agent.
+Hermes session, and generic event stream. Electron never starts or stops the
+agent.
 
 Install and start the Electron client from the repository root:
 

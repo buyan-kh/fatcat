@@ -1,8 +1,16 @@
 # FatCat Agent
 
-FatCat Agent is the product-specific, headless Hermes distribution boundary. It
-owns conversation, planning, provider routing, skills, memory, and goals. FatCat
-talks to it over a private Unix domain socket using the versioned protocol.
+FatCat Agent is the product-specific, headless adapter around Hermes. Hermes
+owns sessions, history, planning, provider routing, skills, memory, and tools.
+FatCat owns channel routing, native permissions, approval continuations, and
+verification at the macOS boundary. FatCat talks to Hermes over a private Unix
+domain socket using the versioned protocol and forwards generic lifecycle
+events to every connected surface.
+
+Conversation records are metadata-only handles. The daemon never persists
+message bodies, transcript deltas, memory, goals, or tool state. Reloading a
+conversation asks Hermes for its session history; local state is limited to
+window/UI preferences, connection state, and approval/audit metadata.
 
 Hermes ACP's persistent session manager is used for `session/new`,
 `session/load`, `session/list`, and `session/cancel`. The build stages the
