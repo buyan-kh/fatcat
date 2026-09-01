@@ -64,6 +64,8 @@ export default function App() {
             onSuggestion={(text) => { void commands.sendMessage(text) }}
             onRetry={() => { snapshot.connection.phase === 'connected' ? void commands.retryLastTurn() : void commands.restartAgent() }}
             onNewChat={() => { void commands.createConversation() }}
+            onApprove={(proposalId) => { void commands.approveAction(proposalId) }}
+            onDeny={(proposalId) => { void commands.denyAction(proposalId) }}
           />
           <PromptBar
             workspacePath={selected?.workspacePath}

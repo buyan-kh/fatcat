@@ -17,12 +17,13 @@ type TraceRow = {
   status: TurnState
   kind: TurnActivityModel['kind']
   expandable: boolean
+  approval?: TurnActivityModel['approval']
 }
 
 const ACTIVE_STATES: TurnState[] = ['sending', 'thinking', 'working', 'streaming', 'stopping']
 
 /** The supplied ThinkingState treatment, fed by real Hermes activities. */
-export function TurnActivity({ activities }: { activities: TurnActivityModel[] }) {
+export function TurnActivity({ activities, onApprove, onDeny }: { activities: TurnActivityModel[]; onApprove: (proposalId: string) => void; onDeny: (proposalId: string) => void }) {
   const [manualExpanded, setManualExpanded] = useState<boolean | null>(null)
   const [open, setOpen] = useState<Set<string>>(new Set())
   const traceRef = useRef<HTMLDivElement>(null)
@@ -99,7 +100,7 @@ export function TurnActivity({ activities }: { activities: TurnActivityModel[] }
                       {content}
                       <CaretDown className={cn('ml-auto size-3 shrink-0 text-muted-foreground/70 opacity-0 transition-[opacity,transform]', rowExpanded && 'rotate-180 opacity-100', 'group-hover:opacity-100')} />
                     </button>
-                    {rowExpanded && (row.detail || row.arguments) && <div className="ml-6 mt-0.5 space-y-0.5 border-l-[0.5px] border-border/70 pl-3 text-[11px] leading-5 text-muted-foreground">{row.arguments && Object.entries(row.arguments).map(([key, value]) => <p key={key}><span className="font-medium text-foreground/70">{key}</span> <code>{value}</code></p>)}{row.detail && <p>{row.detail}</p>}</div>}
+                    {rowExpanded && (row.detail || row.arguments || row.approval) && <div className="ml-6 mt-0.5 space-y-1 border-l-[0.5px] border-border/70 pl-3 text-[11px] leading-5 text-muted-foreground">{row.arguments && Object.entries(row.arguments).map(([key, value]) => <p key={key}><span className="font-medium text-foreground/70">{key}</span> <code>{value}</code></p>)}{row.detail && <p>{row.detail}</p>}{row.approval && <div className="flex gap-1.5 pt-1"><button type="button" className="rounded border px-2 py-1 text-foreground" onClick={() => onApprove(row.approval!.proposalId)}>Approve ({row.approval.risk})</button><button type="button" className="rounded border px-2 py-1" onClick={() => onDeny(row.approval!.proposalId)}>Deny</button></div>}</div>}
                   </div>
                 )
               })}
@@ -120,7 +121,7 @@ function toRows(activities: TurnActivityModel[]): TraceRow[] {
       continue
     }
     const secondary = activity.kind === 'tool' ? Object.values(activity.arguments ?? {})[0] : undefined
-    rows.push({ id: activity.id, primary: activity.label, secondary, arguments: activity.arguments, detail: activity.detail, status: activity.status, kind: activity.kind, expandable: Boolean(activity.detail || Object.keys(activity.arguments ?? {}).length) })
+      rows.push({ id: activity.id, primary: activity.label, secondary, arguments: activity.arguments, detail: activity.detail, approval: activity.approval, status: activity.status, kind: activity.kind, expandable: Boolean(activity.detail || Object.keys(activity.arguments ?? {}).length || activity.approval) })
   }
   return rows
 }

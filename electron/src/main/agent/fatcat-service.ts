@@ -380,7 +380,9 @@ export class FatCatService extends EventEmitter {
     if (!requestId) return
     const assistant = this.ensureAssistant(requestId)
     const activityID = event.event_id
-    const toolID = event.request_id ?? activityID
+    const toolID = typeof details.tool_call_id === 'string'
+      ? details.tool_call_id
+      : typeof details.proposal_id === 'string' ? details.proposal_id : activityID
     let activity = assistant.activities.find((candidate) => candidate.id === toolID || candidate.id === activityID)
     const rawTool = details.tool
     const tool = typeof rawTool === 'string' ? rawTool : event.summary
@@ -396,6 +398,11 @@ export class FatCatService extends EventEmitter {
     }
     activity.detail = event.summary
     activity.arguments = Object.fromEntries(Object.entries(details).map(([key, value]) => [key, Array.isArray(value) ? value.join(', ') : String(value)]))
+    if (event.kind === 'tool.needs_approval' || event.kind === 'native_action.approval_requested') {
+      activity.approval = { proposalId: toolID, risk: typeof details.risk === 'string' ? details.risk : 'high' }
+    } else if (event.kind.endsWith('.completed') || event.kind.endsWith('.failed')) {
+      activity.approval = undefined
+    }
     assistant.isStreaming = status !== 'completed' && status !== 'failed'
   }
 

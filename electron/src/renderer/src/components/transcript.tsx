@@ -14,9 +14,11 @@ type TranscriptProps = {
   onSuggestion: (text: string) => void
   onRetry: () => void
   onNewChat: () => void
+  onApprove: (proposalId: string) => void
+  onDeny: (proposalId: string) => void
 }
 
-export function Transcript({ messages, connection, resumeError, onSuggestion, onRetry, onNewChat }: TranscriptProps) {
+export function Transcript({ messages, connection, resumeError, onSuggestion, onRetry, onNewChat, onApprove, onDeny }: TranscriptProps) {
   const viewport = useRef<HTMLDivElement>(null)
   const [nearBottom, setNearBottom] = useState(true)
 
@@ -64,7 +66,7 @@ export function Transcript({ messages, connection, resumeError, onSuggestion, on
             </div>
           ) : (
             <div className="mt-auto space-y-6 pb-2">
-              {messages.map((item) => <MessageRow key={item.id} message={item} onCopy={copyText} onRetry={onRetry} />)}
+              {messages.map((item) => <MessageRow key={item.id} message={item} onCopy={copyText} onRetry={onRetry} onApprove={onApprove} onDeny={onDeny} />)}
             </div>
           )}
         </div>

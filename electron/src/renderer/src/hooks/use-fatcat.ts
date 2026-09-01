@@ -40,6 +40,8 @@ export function useFatCat() {
     deleteConversation: (id: string) => api && run(() => api.deleteConversation(id)),
     sendMessage: (text: string) => api && run(() => api.sendMessage(text)),
     cancelTurn: () => api && run(() => api.cancelTurn()),
+    approveAction: (proposalId: string) => api && run(() => api.approveAction(proposalId)),
+    denyAction: (proposalId: string) => api && run(() => api.denyAction(proposalId)),
     retryLastTurn: () => api && run(() => api.retryLastTurn()),
     chooseWorkspace: () => api ? run(() => api.chooseWorkspace()) : Promise.resolve(undefined),
     setAppearance: (appearance: AppearancePreference) => api && run(() => api.setAppearance(appearance)),

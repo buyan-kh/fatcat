@@ -11,9 +11,11 @@ type MessageRowProps = {
   message: ChatMessage
   onCopy: (text: string) => void
   onRetry: () => void
+  onApprove: (proposalId: string) => void
+  onDeny: (proposalId: string) => void
 }
 
-export function MessageRow({ message, onCopy, onRetry }: MessageRowProps) {
+export function MessageRow({ message, onCopy, onRetry, onApprove, onDeny }: MessageRowProps) {
   if (message.role === 'system') {
     return <div className="surface-card mx-auto max-w-xl px-3 py-2 text-xs leading-5 text-muted-foreground">{message.text}</div>
   }
@@ -22,7 +24,7 @@ export function MessageRow({ message, onCopy, onRetry }: MessageRowProps) {
     <article className={`group/message flex w-full gap-3 ${user ? 'justify-end' : 'justify-start'}`} aria-label={user ? 'You' : 'FatCat'}>
       {!user && <div className="mt-0.5 flex size-6 shrink-0 items-center justify-center rounded-full bg-foreground text-[10px] font-bold text-background">F</div>}
       <div className={`min-w-0 ${user ? 'max-w-[78%]' : 'max-w-[min(720px,calc(100%-36px))] flex-1'}`}>
-        {!user && <TurnActivity activities={message.activities} />}
+        {!user && <TurnActivity activities={message.activities} onApprove={onApprove} onDeny={onDeny} />}
         {user ? (
           <div className="rounded-[10px] rounded-br-[4px] border-[0.5px] border-border/70 bg-muted/80 px-3.5 py-2.5 text-sm leading-6">{message.text}</div>
         ) : (

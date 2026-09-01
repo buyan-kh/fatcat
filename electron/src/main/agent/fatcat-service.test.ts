@@ -164,6 +164,24 @@ describe('FatCatService', () => {
     await service.sendMessage('New chat reply')
     expect(transport.commands.at(-1)).toMatchObject({ type: 'user_message', conversation_id: record.id, session_id: 'electron-session' })
   })
+
+  it('reduces generic Hermes tool lifecycle events without tool-specific branches', async () => {
+    const record = await service.createConversation('/tmp/project')
+    const creation = transport.commands.at(-1)!
+    transport.event({ version: 1, type: 'session_ready', request_id: requestId(creation), conversation_id: record.id, session_id: 's1' })
+    await vi.waitFor(async () => expect((await service.snapshot()).conversations[0]?.hermesSessionId).toBe('s1'))
+    await service.sendMessage('Send the draft')
+    const turn = transport.commands.at(-1)!
+    const request = requestId(turn)
+    transport.event({ version: 2, event_id: 'e-start', kind: 'tool.started', session_id: 's1', request_id: request, summary: 'Started send_email', details: { tool: 'send_email', tool_call_id: 'tool-1' } })
+    transport.event({ version: 2, event_id: 'e-approval', kind: 'tool.needs_approval', session_id: 's1', request_id: request, summary: 'Send email to Sarah', details: { proposal_id: 'tool-1', risk: 'high' } })
+    transport.event({ version: 2, event_id: 'e-complete', kind: 'tool.completed', session_id: 's1', request_id: request, summary: 'Email sent', details: { tool: 'send_email', tool_call_id: 'tool-1' } })
+
+    await vi.waitFor(async () => {
+      const assistant = (await service.snapshot()).messages.at(-1)
+      expect(assistant?.activities.find((activity) => activity.id === 'tool-1')).toMatchObject({ label: 'send_email', status: 'completed' })
+    })
+  })
 })
 
 function requestId(command: ClientCommand): string {
