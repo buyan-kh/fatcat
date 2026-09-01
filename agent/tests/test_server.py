@@ -36,6 +36,23 @@ class ServerTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(events, [])
 
+    async def test_streamed_reply_persists_separately_from_its_user_request(self):
+        with tempfile.TemporaryDirectory() as root:
+            server = PeppaAgentServer(Path(root) / "agent.sock", Path(root) / "Hermes")
+            server.conversation_store.create("c1", "First", root)
+            server.conversation_store.attach_session("c1", "s1")
+            server.session_conversations["s1"] = "c1"
+            server.conversation_store.append_message("c1", "r1", "user", "hello")
+
+            await server.broadcast({"version": 1, "type": "assistant_delta", "request_id": "r1", "session_id": "s1", "text": "Hi"})
+            await server.broadcast({"version": 1, "type": "assistant_delta", "request_id": "r1", "session_id": "s1", "text": " there"})
+
+            reopened = server.conversation_store.__class__(server.conversation_store.path).get("c1")
+            self.assertEqual(reopened["messages"], [
+                {"id": "r1", "role": "user", "text": "hello"},
+                {"id": "assistant-r1", "role": "assistant", "text": "Hi there"},
+            ])
+
     async def test_live_agent_socket_is_never_replaced_but_stale_socket_is_recovered(self):
         with tempfile.TemporaryDirectory() as root:
             socket_path = Path(root) / "fatcat.sock"

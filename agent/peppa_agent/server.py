@@ -364,9 +364,10 @@ class PeppaAgentServer:
         if conversation_id:
             event.setdefault("conversation_id", conversation_id)
             if event.get("type") == "assistant_delta":
+                request_id = str(event.get("request_id") or uuid.uuid4())
                 self.conversation_store.append_assistant_delta(
                     conversation_id,
-                    str(event.get("request_id") or uuid.uuid4()),
+                    f"assistant-{request_id}",
                     str(event.get("text") or ""),
                 )
         payload = (json.dumps(event, separators=(",", ":")) + "\n").encode()
