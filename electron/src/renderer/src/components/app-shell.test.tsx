@@ -5,6 +5,7 @@ import type { ConversationRecord } from '@shared/chat'
 import { AppSidebar } from './app-sidebar'
 import { ConversationHeader } from './conversation-header'
 import SearchList from './search-list'
+import { WindowControls } from './window-controls'
 
 const conversations: ConversationRecord[] = [
   { id: 'c1', title: 'First project', createdAt: '2026-08-29T00:00:00.000Z', updatedAt: '2026-08-29T00:00:00.000Z', lastPreview: 'Build a window', workspacePath: '/tmp/first' },
@@ -56,6 +57,10 @@ describe('application shell', () => {
         conversation={conversations[0]}
         connection={{ phase: 'offline', detail: 'Hermes disconnected' }}
         onChooseWorkspace={onChooseWorkspace}
+        windowMaximized={false}
+        onMinimize={vi.fn()}
+        onToggleMaximize={vi.fn()}
+        onClose={vi.fn()}
       />,
     )
     expect(screen.getByText('First project')).toBeInTheDocument()
@@ -74,5 +79,20 @@ describe('application shell', () => {
     expect(screen.getByText('No chats found')).toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: 'Clear search' }))
     expect(search).toHaveValue('')
+  })
+
+  it('exposes accessible minimize, maximize, and close controls', async () => {
+    const user = userEvent.setup()
+    const onMinimize = vi.fn()
+    const onToggleMaximize = vi.fn()
+    const onClose = vi.fn()
+    render(<WindowControls isMaximized={false} onMinimize={onMinimize} onToggleMaximize={onToggleMaximize} onClose={onClose} />)
+
+    await user.click(screen.getByRole('button', { name: 'Minimize window' }))
+    await user.click(screen.getByRole('button', { name: 'Maximize window' }))
+    await user.click(screen.getByRole('button', { name: 'Close window' }))
+    expect(onMinimize).toHaveBeenCalledOnce()
+    expect(onToggleMaximize).toHaveBeenCalledOnce()
+    expect(onClose).toHaveBeenCalledOnce()
   })
 })

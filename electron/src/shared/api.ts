@@ -36,6 +36,10 @@ export type FatCatAPI = {
   setAppearance(appearance: AppearancePreference): Promise<void>
   restartAgent(): Promise<void>
   getDiagnostics(): Promise<AgentDiagnostics>
+  minimizeWindow(): Promise<void>
+  toggleMaximizeWindow(): Promise<boolean>
+  isWindowMaximized(): Promise<boolean>
+  closeWindow(): Promise<void>
   subscribe(listener: (event: FatCatEvent) => void): () => void
 }
 
@@ -54,4 +58,8 @@ export const FATCAT_INVOKE_CHANNELS = {
   setAppearance: 'fatcat:set-appearance',
   restartAgent: 'fatcat:restart-agent',
   getDiagnostics: 'fatcat:get-diagnostics',
+  minimizeWindow: 'fatcat:minimize-window',
+  toggleMaximizeWindow: 'fatcat:toggle-maximize-window',
+  isWindowMaximized: 'fatcat:is-window-maximized',
+  closeWindow: 'fatcat:close-window',
 } as const

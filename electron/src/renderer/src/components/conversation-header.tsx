@@ -3,15 +3,19 @@ import { WifiHigh } from '@phosphor-icons/react/WifiHigh'
 import { WifiSlash } from '@phosphor-icons/react/WifiSlash'
 import type { ConnectionStatus, ConversationRecord } from '@shared/chat'
 import { Button } from '@renderer/components/ui/button'
-import { cn } from '@renderer/lib/utils'
+import { WindowControls } from './window-controls'
 
 type ConversationHeaderProps = {
   conversation?: ConversationRecord
   connection: ConnectionStatus
   onChooseWorkspace: () => void
+  windowMaximized: boolean
+  onMinimize: () => void
+  onToggleMaximize: () => void
+  onClose: () => void
 }
 
-export function ConversationHeader({ conversation, connection, onChooseWorkspace }: ConversationHeaderProps) {
+export function ConversationHeader({ conversation, connection, onChooseWorkspace, windowMaximized, onMinimize, onToggleMaximize, onClose }: ConversationHeaderProps) {
   const connected = connection.phase === 'connected'
   return (
     <header className="app-drag hairline flex h-12 shrink-0 items-center gap-3 border-b-[0.5px] px-4">
@@ -32,6 +36,7 @@ export function ConversationHeader({ conversation, connection, onChooseWorkspace
         {connected ? <WifiHigh className="size-3.5 text-emerald-500" /> : <WifiSlash className="size-3.5" />}
         <span>{connected ? 'Connected' : 'Offline'}</span>
       </Button>
+      <WindowControls isMaximized={windowMaximized} onMinimize={onMinimize} onToggleMaximize={onToggleMaximize} onClose={onClose} />
     </header>
   )
 }
