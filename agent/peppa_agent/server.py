@@ -466,17 +466,7 @@ class PeppaAgentServer:
             self.sessions[session_id] = PeppaAgentSession(
                 session_id, cwd, self.broadcast, self.loop or asyncio.get_running_loop(), state, manager, self.acp_agent
             )
-            if not existing.get("messages"):
-                for index, item in enumerate(state.history):
-                    role = str(item.get("role") or "")
-                    text = item.get("content")
-                    if role in {"user", "assistant"} and isinstance(text, str) and text:
-                        self.conversation_store.append_message(
-                            conversation_id,
-                            f"history-{session_id}-{index}",
-                            role,
-                            text,
-                        )
+            self.conversation_store.merge_history(conversation_id, session_id, state.history)
             await self.broadcast(_event("conversation_snapshot", **self.conversation_store.snapshot()))
             return _event("session_loaded", request_id=request_id, conversation_id=conversation_id, session_id=session_id)
         if message_type == "list_sessions":
@@ -541,7 +531,10 @@ class PeppaAgentServer:
             raise ValueError(f"unsupported message type: {message_type}")
         session_id = str(message.get("session_id") or "")
         request_id = str(message.get("request_id") or uuid.uuid4())
-        conversation_id = self._required_text(message, "conversation_id")
+        conversation_id = str(message.get("conversation_id") or "")
+        if not conversation_id:
+            legacy_record = self.conversation_store.find_by_session(session_id)
+            conversation_id = str(legacy_record.get("id") if legacy_record else "")
         record = self.conversation_store.get(conversation_id)
         if record is None or record.get("session_id") != session_id:
             return _event(

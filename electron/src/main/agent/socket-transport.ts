@@ -5,6 +5,7 @@ import { decodeAgentEvent, encodeClientCommand, type AgentEvent, type ClientComm
 type SocketTransportOptions = {
   handshakeTimeoutMs?: number
   reconnectDelayMs?: number
+  reconnectAttempts?: number
 }
 
 export class SocketTransport extends EventEmitter {
@@ -14,13 +15,16 @@ export class SocketTransport extends EventEmitter {
   private connecting?: Promise<void>
   private readonly handshakeTimeoutMs: number
   private readonly reconnectDelayMs: number
+  private readonly maximumReconnectAttempts: number
   private reconnectTimer?: NodeJS.Timeout
+  private reconnectAttempt = 0
   private keepAlive = false
 
   constructor(readonly socketPath: string, options: SocketTransportOptions = {}) {
     super()
     this.handshakeTimeoutMs = options.handshakeTimeoutMs ?? 3000
     this.reconnectDelayMs = options.reconnectDelayMs ?? 500
+    this.maximumReconnectAttempts = options.reconnectAttempts ?? 8
   }
 
   get isConnected(): boolean {
@@ -34,6 +38,8 @@ export class SocketTransport extends EventEmitter {
     }
     if (this.isConnected) return Promise.resolve()
     if (this.connecting) return this.connecting
+    if (!this.keepAlive) this.reconnectAttempt = 0
+    this.buffer = ''
     this.connecting = new Promise<void>((resolve, reject) => {
       let settled = false
       const finish = (error?: Error) => {
@@ -45,7 +51,12 @@ export class SocketTransport extends EventEmitter {
         else resolve()
       }
       const timeout = setTimeout(() => {
-        this.close()
+        if (this.socket === socket) {
+          this.ready = false
+          this.socket = undefined
+          this.buffer = ''
+          socket.destroy()
+        }
         finish(new Error('FatCat Agent handshake timed out'))
       }, this.handshakeTimeoutMs)
 
@@ -66,6 +77,7 @@ export class SocketTransport extends EventEmitter {
         const wasReady = this.ready
         this.ready = false
         this.socket = undefined
+        this.buffer = ''
         this.emit('status', { phase: 'offline', detail: 'FatCat Agent disconnected.' })
         this.emit('disconnect')
         if (!wasReady) finish(new Error('FatCat Agent disconnected before handshake'))
@@ -102,6 +114,7 @@ export class SocketTransport extends EventEmitter {
           if (event.type === 'hello_ack' && !this.ready) {
             this.ready = true
             this.keepAlive = true
+            this.reconnectAttempt = 0
             this.emit('status', { phase: 'connected', detail: `Connected to FatCat Agent ${event.agent_version}` })
             onHandshake()
           }
@@ -115,13 +128,20 @@ export class SocketTransport extends EventEmitter {
   }
 
   private scheduleReconnect(): void {
-    if (this.reconnectTimer) return
+    if (this.reconnectTimer || !this.keepAlive) return
+    if (this.reconnectAttempt >= this.maximumReconnectAttempts) {
+      this.keepAlive = false
+      this.emit('status', { phase: 'failed', detail: 'FatCat Agent did not reconnect.' })
+      return
+    }
+    const delay = Math.min(8000, this.reconnectDelayMs * (2 ** this.reconnectAttempt))
+    this.reconnectAttempt += 1
     this.reconnectTimer = setTimeout(() => {
       this.reconnectTimer = undefined
       void this.connect().catch(() => {
         if (this.keepAlive) this.scheduleReconnect()
       })
-    }, this.reconnectDelayMs)
+    }, delay)
     this.reconnectTimer.unref()
   }
 }

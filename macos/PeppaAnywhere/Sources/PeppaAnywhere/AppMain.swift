@@ -299,7 +299,12 @@ final class PeppaAgentClient: ObservableObject {
     private var socketHandle: FileHandle?
     private var buffer = Data()
     private let socketPath: URL
-    private var launchTask: Task<Void, Never>?
+    private var outboundQueue: [PeppaIPCMessage] = []
+    private var drainTask: Task<Void, Never>?
+    private var connectionTask: Task<Bool, Never>?
+    private var connectionGeneration = 0
+    private var reconnectTask: Task<Void, Never>?
+    private var isStopped = false
 
     init() {
         let baseSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
@@ -341,12 +346,7 @@ final class PeppaAgentClient: ObservableObject {
     }
 
     func send(text: String, conversationID: String, sessionID: String, observation: ObservationPayload?, requestID: String = UUID().uuidString) {
-        launchTask?.cancel()
-        launchTask = Task { [weak self] in
-            guard let self else { return }
-            await self.ensureConnected()
-            try? self.write(.userMessage(requestID: requestID, conversationID: conversationID, sessionID: sessionID, text: Self.prompt(text, observation: observation)))
-        }
+        request(.userMessage(requestID: requestID, conversationID: conversationID, sessionID: sessionID, text: Self.prompt(text, observation: observation)))
     }
 
     func renameConversation(conversationID: String, title: String) {
@@ -371,15 +371,22 @@ final class PeppaAgentClient: ObservableObject {
     }
 
     func reconnect() {
-        launchTask?.cancel()
+        isStopped = false
+        connectionTask?.cancel()
+        connectionTask = nil
         closeConnection()
-        launchTask = Task { [weak self] in
-            await self?.ensureConnected()
-        }
+        startReconnect()
     }
 
     func stop() {
-        launchTask?.cancel()
+        isStopped = true
+        drainTask?.cancel()
+        drainTask = nil
+        connectionTask?.cancel()
+        connectionTask = nil
+        reconnectTask?.cancel()
+        reconnectTask = nil
+        outboundQueue.removeAll()
         closeConnection()
         status = "FatCat Agent disconnected."
     }
@@ -388,22 +395,38 @@ final class PeppaAgentClient: ObservableObject {
         socketHandle?.readabilityHandler = nil
         try? socketHandle?.close()
         socketHandle = nil
+        buffer.removeAll(keepingCapacity: true)
     }
 
-    private func ensureConnected() async {
-        if socketHandle != nil { return }
-        status = "Connecting to shared FatCat Agent…"
-        for attempt in 0..<50 {
-            if Task.isCancelled { return }
-            if connectSocket() {
-                try? write(.clientHello(client: "native_pet"))
-                status = "Connected"
-                return
+    private func ensureConnected() async -> Bool {
+        if socketHandle != nil { return true }
+        if let connectionTask { return await connectionTask.value }
+        connectionGeneration += 1
+        let generation = connectionGeneration
+        let nextTask = Task { [weak self] () -> Bool in
+            guard let self else { return false }
+            self.status = "Connecting to shared FatCat Agent…"
+            for attempt in 0..<12 {
+                guard !Task.isCancelled, !self.isStopped else { return false }
+                if self.connectSocket() {
+                    do {
+                        try self.write(.clientHello(client: "native_pet"))
+                        self.status = "Connected"
+                        return true
+                    } catch {
+                        self.closeConnection()
+                    }
+                }
+                let delay = min(2000, 150 * (attempt + 1))
+                try? await Task.sleep(for: .milliseconds(delay))
             }
-            let delay = min(1000, 100 + attempt * 40)
-            try? await Task.sleep(for: .milliseconds(delay))
+            self.status = "Shared FatCat Agent is unavailable. Reconnect or install the LaunchAgent."
+            return false
         }
-        status = "Shared FatCat Agent is unavailable. Reconnect or install the LaunchAgent."
+        connectionTask = nextTask
+        let connected = await nextTask.value
+        if connectionGeneration == generation { connectionTask = nil }
+        return connected
     }
 
     private func connectSocket() -> Bool {
@@ -423,7 +446,7 @@ final class PeppaAgentClient: ObservableObject {
         handle.readabilityHandler = { [weak self] file in
             let data = file.availableData
             guard !data.isEmpty else {
-                Task { @MainActor [weak self] in self?.handleDisconnect() }
+                Task { @MainActor [weak self] in self?.handleDisconnect(file) }
                 return
             }
             Task { @MainActor [weak self] in self?.consume(data) }
@@ -453,11 +476,11 @@ final class PeppaAgentClient: ObservableObject {
         }
     }
 
-    private func handleDisconnect() {
-        socketHandle?.readabilityHandler = nil
-        try? socketHandle?.close()
-        socketHandle = nil
-        status = "Disconnected — reconnect to continue."
+    private func handleDisconnect(_ disconnectedHandle: FileHandle) {
+        guard socketHandle === disconnectedHandle else { return }
+        closeConnection()
+        status = "Disconnected — reconnecting…"
+        startReconnect()
     }
 
     private static func prompt(_ text: String, observation: ObservationPayload?) -> String {
@@ -472,11 +495,35 @@ final class PeppaAgentClient: ObservableObject {
     }
 
     private func request(_ message: PeppaIPCMessage) {
-        launchTask?.cancel()
-        launchTask = Task { [weak self] in
+        isStopped = false
+        outboundQueue.append(message)
+        startDrain()
+    }
+
+    private func startDrain() {
+        guard drainTask == nil, !outboundQueue.isEmpty, !isStopped else { return }
+        drainTask = Task { [weak self] in
             guard let self else { return }
-            await self.ensureConnected()
-            try? self.write(message)
+            while !Task.isCancelled, !self.outboundQueue.isEmpty {
+                guard await self.ensureConnected() else { break }
+                do {
+                    try self.write(self.outboundQueue[0])
+                    self.outboundQueue.removeFirst()
+                } catch {
+                    self.closeConnection()
+                }
+            }
+            self.drainTask = nil
+        }
+    }
+
+    private func startReconnect() {
+        guard reconnectTask == nil, !isStopped else { return }
+        reconnectTask = Task { [weak self] in
+            guard let self else { return }
+            let connected = await self.ensureConnected()
+            self.reconnectTask = nil
+            if connected { self.startDrain() }
         }
     }
 }

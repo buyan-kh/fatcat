@@ -233,6 +233,27 @@ class ServerTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(server.conversation_store.get("c1")["messages"][0]["text"], "hello")
             await asyncio.sleep(0)
 
+    async def test_legacy_v1_turn_resolves_conversation_from_session(self):
+        class FakeACPAgent:
+            async def prompt(self, **_kwargs):
+                return SimpleNamespace(stop_reason="end_turn")
+
+        with tempfile.TemporaryDirectory() as root:
+            server = PeppaAgentServer(Path(root) / "agent.sock", Path(root) / "Hermes")
+            server.conversation_store.create("c1", "First", root)
+            server.conversation_store.attach_session("c1", "s1")
+            state = SimpleNamespace(session_id="s1", cwd=root, agent=SimpleNamespace(), history=[], cancel_event=threading.Event())
+            server.sessions["s1"] = PeppaAgentSession("s1", root, server.broadcast, asyncio.get_running_loop(), state, None, FakeACPAgent())
+
+            response = await server.handle_message(
+                {"version": 1, "type": "user_message", "request_id": "r1", "session_id": "s1", "text": "hello"},
+                lambda event: None,
+            )
+
+            self.assertEqual(response["type"], "state")
+            self.assertEqual(server.conversation_store.get("c1")["messages"][0]["text"], "hello")
+            await asyncio.sleep(0)
+
     async def test_turn_rejects_a_session_owned_by_another_conversation(self):
         with tempfile.TemporaryDirectory() as root:
             server = PeppaAgentServer(Path(root) / "agent.sock", Path(root) / "Hermes")

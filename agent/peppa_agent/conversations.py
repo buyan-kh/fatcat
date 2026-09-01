@@ -16,10 +16,14 @@ class SessionConflict(ValueError):
 class ConversationStore:
     def __init__(self, path: Path, legacy_paths: list[Path] | tuple[Path, ...] = ()):
         self.path = path
+        self.migration_path = path.with_suffix(path.suffix + ".migrations")
         self._lock = threading.RLock()
         self._document, migrated = self._load()
+        completed_migrations = self._load_completed_migrations()
+        migrations_changed = False
         for legacy_path in legacy_paths:
-            if legacy_path == path:
+            migration_key = str(legacy_path.expanduser().resolve())
+            if legacy_path == path or migration_key in completed_migrations or not legacy_path.exists():
                 continue
             try:
                 legacy, _ = self._load_path(legacy_path)
@@ -33,8 +37,12 @@ class ConversationStore:
             if self._document["selected_id"] is None and legacy["selected_id"] in {record["id"] for record in self._document["records"]}:
                 self._document["selected_id"] = legacy["selected_id"]
                 migrated = True
+            completed_migrations.add(migration_key)
+            migrations_changed = True
         if migrated:
             self._save()
+        if migrations_changed:
+            self._save_completed_migrations(completed_migrations)
 
     def snapshot(self) -> dict:
         with self._lock:
@@ -43,6 +51,11 @@ class ConversationStore:
     def get(self, conversation_id: str) -> dict | None:
         with self._lock:
             record = self._find(conversation_id)
+            return deepcopy(record) if record else None
+
+    def find_by_session(self, session_id: str) -> dict | None:
+        with self._lock:
+            record = next((item for item in self._document["records"] if item.get("session_id") == session_id), None)
             return deepcopy(record) if record else None
 
     def create(self, conversation_id: str, title: str, workspace_path: str) -> dict:
@@ -129,8 +142,48 @@ class ConversationStore:
             self._save()
             return deepcopy(message)
 
+    def merge_history(self, conversation_id: str, session_id: str, history: list[dict]) -> None:
+        with self._lock:
+            record = self._required(conversation_id)
+            existing = record["messages"]
+            used: set[int] = set()
+            cursor = 0
+            merged = []
+            for history_index, item in enumerate(history):
+                role = item.get("role")
+                text = item.get("content")
+                if role not in {"user", "assistant"} or not isinstance(text, str) or not text:
+                    continue
+                match = next((
+                    index for index in range(cursor, len(existing))
+                    if index not in used and existing[index]["role"] == role and existing[index]["text"] == text
+                ), None)
+                if match is None:
+                    merged.append({"id": f"history-{session_id}-{history_index}", "role": role, "text": text})
+                else:
+                    merged.append(deepcopy(existing[match]))
+                    used.add(match)
+                    cursor = match + 1
+            merged.extend(deepcopy(item) for index, item in enumerate(existing) if index not in used)
+            if merged != existing:
+                record["messages"] = merged
+                self._save()
+
     def _load(self) -> tuple[dict, bool]:
         return self._load_path(self.path)
+
+    def _load_completed_migrations(self) -> set[str]:
+        try:
+            value = json.loads(self.migration_path.read_text(encoding="utf-8"))
+        except (FileNotFoundError, OSError, json.JSONDecodeError):
+            return set()
+        return {item for item in value if isinstance(item, str)} if isinstance(value, list) else set()
+
+    def _save_completed_migrations(self, completed: set[str]) -> None:
+        self.migration_path.parent.mkdir(parents=True, exist_ok=True)
+        temporary = self.migration_path.with_suffix(self.migration_path.suffix + ".tmp")
+        temporary.write_text(json.dumps(sorted(completed), separators=(",", ":")), encoding="utf-8")
+        os.replace(temporary, self.migration_path)
 
     def _load_path(self, path: Path) -> tuple[dict, bool]:
         try:

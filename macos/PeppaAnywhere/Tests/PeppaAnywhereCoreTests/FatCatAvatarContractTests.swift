@@ -103,6 +103,9 @@ struct FatCatAvatarContractTests {
         #expect(!appMain.contains("panel.setContentSize"))
         #expect(appMain.contains("native-conversations-cache.json"))
         #expect(!appMain.contains("support.appendingPathComponent(\"conversations.json\")"))
+        #expect(appMain.contains("outboundQueue"))
+        #expect(appMain.contains("startReconnect()"))
+        #expect(!appMain.contains("launchTask?.cancel()"))
     }
 
     private func loadJSON(_ relativePath: String) throws -> [String: Any] {

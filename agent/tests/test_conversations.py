@@ -100,11 +100,30 @@ class ConversationStoreTests(unittest.TestCase):
             }), encoding="utf-8")
 
             first = ConversationStore(canonical, legacy_paths=[legacy]).snapshot()
+            ConversationStore(canonical, legacy_paths=[legacy]).delete("electron-1")
             second = ConversationStore(canonical, legacy_paths=[legacy]).snapshot()
 
-            self.assertEqual(first, second)
             self.assertEqual(first["selected_id"], "electron-1")
             self.assertEqual(first["records"][0]["session_id"], "session-1")
+            self.assertEqual(second, {"selected_id": None, "records": []})
+
+    def test_history_merge_completes_partial_records_without_duplicates(self):
+        with tempfile.TemporaryDirectory() as root:
+            store = ConversationStore(Path(root) / "conversations.json")
+            store.create("c1", "First", root)
+            store.append_message("c1", "live-1", "user", "new question")
+            history = [
+                {"role": "user", "content": "old question"},
+                {"role": "assistant", "content": "old answer"},
+                {"role": "user", "content": "new question"},
+            ]
+
+            store.merge_history("c1", "s1", history)
+            store.merge_history("c1", "s1", history)
+
+            messages = store.get("c1")["messages"]
+            self.assertEqual([item["text"] for item in messages], ["old question", "old answer", "new question"])
+            self.assertEqual(messages[-1]["id"], "live-1")
 
 
 if __name__ == "__main__":
