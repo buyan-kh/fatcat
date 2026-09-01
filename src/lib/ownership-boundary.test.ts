@@ -6,8 +6,8 @@ const sourceRoot = fileURLToPath(new URL('../', import.meta.url))
 
 describe('FatCat ownership boundary', () => {
   it('does not put local agent systems in the browser product surface', () => {
-    const source = readFileSync(`${sourceRoot}/components/CompanionDashboard.tsx`, 'utf8')
-    expect(source).not.toMatch(/from ['"]\.\.\/lib\/(memory|goals|learning|brain)['"]/)
+    const source = readFileSync(`${sourceRoot}/App.tsx`, 'utf8')
+    expect(source).not.toMatch(/memory|goals|learning|brain|PlannerAdapter|MemoryAdapter/)
   })
 
   it('does not persist transcripts from the daemon', () => {
