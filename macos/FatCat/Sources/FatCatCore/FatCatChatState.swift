@@ -203,6 +203,19 @@ public struct FatCatConversationRecord: Codable, Equatable, Identifiable, Sendab
     }
 }
 
+public enum FatCatConversationSelection {
+    public static func resolve(
+        localID: String?,
+        sharedID: String?,
+        availableIDs: [String]
+    ) -> String? {
+        let available = Set(availableIDs)
+        if let localID, available.contains(localID) { return localID }
+        if let sharedID, available.contains(sharedID) { return sharedID }
+        return availableIDs.first
+    }
+}
+
 public enum FatCatSessionResolution: Equatable, Sendable {
     case create
     case load(sessionID: String)
