@@ -43,6 +43,13 @@ describe('conversation experience', () => {
     expect(screen.getByRole('button', { name: /read_file/ })).toBeInTheDocument()
   })
 
+  it('uses the supplied thinking-state treatment for a live turn', () => {
+    render(<MessageRow message={{ ...assistant, activities: [{ id: 'state-1', requestId: 'r1', kind: 'state', label: 'Thinking', status: 'thinking' }] }} onCopy={vi.fn()} onRetry={vi.fn()} />)
+    expect(screen.getByLabelText('Hermes activity')).toHaveClass('thinking-state')
+    expect(screen.getByRole('button', { name: 'Thinking' })).toHaveClass('thinking-state-trigger')
+    expect(screen.getByText('Thinking')).toHaveClass('thinking-shimmer')
+  })
+
   it('resolves plain streaming text word by word and shows a live cursor', () => {
     render(<MessageRow message={{ ...assistant, text: 'Hello from FatCat', isStreaming: true, activities: [] }} onCopy={vi.fn()} onRetry={vi.fn()} />)
     expect(screen.getByLabelText('Streaming response')).toBeInTheDocument()

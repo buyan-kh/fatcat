@@ -31,7 +31,9 @@ describe('application shell', () => {
       />,
     )
 
+    expect(screen.getByRole('complementary', { name: 'Workspace navigation' })).toHaveAttribute('data-sidebar-collapsed', 'false')
     expect(screen.getByRole('heading', { name: 'FatCat' })).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Search chats' }))
     expect(screen.getByRole('searchbox', { name: 'Search chats' })).toHaveClass('nav-control')
     expect(screen.getByRole('button', { name: 'New chat' })).toHaveClass('nav-control')
     await user.click(screen.getByRole('button', { name: 'New chat' }))
