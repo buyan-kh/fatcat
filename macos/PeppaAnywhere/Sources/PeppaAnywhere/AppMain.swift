@@ -213,6 +213,9 @@ final class PetModel: ObservableObject {
     @Published var focusComposerToken = 0
     @Published var flightCue: FlightCue?
     @Published var reactionCue: ReactionCue?
+    @Published var isListening = false
+    @Published var isSpeaking = false
+    @Published var speakReplies = true
     var onLifeEvent: ((FatCatLifeEvent) -> Void)?
     var retryState = FatCatRetryState()
 
@@ -1345,32 +1348,111 @@ struct PetRootView: View {
     let onClick: () -> Void
     let onDragBegan: () -> Void
     let onDragEnded: () -> Void
-    let onSend: () -> Void
-    let onRetry: () -> Void
-    let onReconnect: () -> Void
-    let onStop: () -> Void
-    let onClose: () -> Void
-    let onExpand: () -> Void
-    let onNewChat: () -> Void
-    let onSelectConversation: (FatCatConversationRecord) -> Void
-    let onDeleteConversation: (FatCatConversationRecord) -> Void
-    let onRenameConversation: (FatCatConversationRecord, String) -> Void
 
     var body: some View {
-        Group {
-            if model.isChatOpen {
-                HStack(alignment: .bottom, spacing: 12) {
-                    FatCatAvatarView(animationKey: model.life.animationKey, flightCue: model.flightCue, reactionCue: model.reactionCue, onClick: onClick, onDragBegan: onDragBegan, onDragEnded: onDragEnded).frame(width: 200, height: 200)
-                    ChatBubble(model: model, onSend: onSend, onRetry: onRetry, onReconnect: onReconnect, onStop: onStop, onClose: onClose, onExpand: onExpand, onNewChat: onNewChat, onSelectConversation: onSelectConversation, onDeleteConversation: onDeleteConversation, onRenameConversation: onRenameConversation)
-                }.padding(14)
-            } else {
-                FatCatAvatarView(animationKey: model.life.animationKey, flightCue: model.flightCue, reactionCue: model.reactionCue, onClick: onClick, onDragBegan: onDragBegan, onDragEnded: onDragEnded).frame(width: 220, height: 220)
+        FatCatAvatarView(
+            animationKey: model.life.animationKey,
+            flightCue: model.flightCue,
+            reactionCue: model.reactionCue,
+            onClick: onClick,
+            onDragBegan: onDragBegan,
+            onDragEnded: onDragEnded
+        )
+        .background(Color.clear)
+    }
+}
+
+struct FatCatMiniChatView: View {
+    @ObservedObject var model: PetModel
+    let onSend: () -> Void
+    let onClose: () -> Void
+    let onMicrophone: () -> Void
+    let onSpeaker: () -> Void
+
+    private var latestUser: ChatMessage? { model.messages.last(where: { $0.role == .user }) }
+    private var latestAssistant: ChatMessage? { model.messages.last(where: { $0.role == .assistant }) }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack(spacing: 8) {
+                Circle().fill(statusColor).frame(width: 7, height: 7)
+                Text(model.isGenerating ? "FatCat is thinking" : model.agentStatus)
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                Spacer()
             }
-        }.background(Color.clear)
+
+            if let latestUser {
+                Text(latestUser.text)
+                    .font(.system(size: 13))
+                    .padding(.horizontal, 11).padding(.vertical, 8)
+                    .background(Color.primary.opacity(0.08))
+                    .clipShape(RoundedRectangle(cornerRadius: 12))
+                    .frame(maxWidth: .infinity, alignment: .trailing)
+            }
+
+            ScrollView {
+                Text(latestAssistant?.text.isEmpty == false ? latestAssistant!.text : (model.isGenerating ? "Thinking…" : "Ask FatCat anything."))
+                    .font(.system(size: 14))
+                    .lineSpacing(3)
+                    .textSelection(.enabled)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .frame(minHeight: 58, maxHeight: 112)
+
+            HStack(spacing: 8) {
+                TextField("Message FatCat", text: $model.draft)
+                    .textFieldStyle(.plain)
+                    .onSubmit(onSend)
+                Button(action: onSend) { Image(systemName: "arrow.up") }
+                    .buttonStyle(.borderedProminent)
+                    .clipShape(Circle())
+                    .disabled(model.draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            }
+            .padding(.leading, 12).padding(.trailing, 5).padding(.vertical, 5)
+            .background(Color.primary.opacity(0.065))
+            .clipShape(Capsule())
+
+            HStack(spacing: 16) {
+                control(model.isListening ? "mic.fill" : "mic", active: model.isListening, action: onMicrophone, label: "Talk to FatCat")
+                control("xmark", active: false, action: onClose, label: "Close chat")
+                control(model.speakReplies ? "speaker.wave.2.fill" : "speaker.slash.fill", active: model.speakReplies, action: onSpeaker, label: "Spoken replies")
+            }
+            .frame(maxWidth: .infinity)
+        }
+        .padding(16)
+        .frame(width: 360, height: 286)
+        .background(.ultraThinMaterial)
+        .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 24, style: .continuous).stroke(.white.opacity(0.22)))
+        .shadow(color: .black.opacity(0.18), radius: 24, y: 10)
+    }
+
+    private var statusColor: Color {
+        model.agentStatus == "Connected" ? .green : .orange
+    }
+
+    private func control(_ symbol: String, active: Bool, action: @escaping () -> Void, label: String) -> some View {
+        Button(action: action) {
+            Image(systemName: symbol)
+                .font(.system(size: 16, weight: .medium))
+                .frame(width: 36, height: 36)
+                .background(active ? Color.accentColor.opacity(0.2) : Color(nsColor: .controlBackgroundColor).opacity(0.82))
+                .clipShape(Circle())
+                .overlay(Circle().stroke(.white.opacity(0.25)))
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(label)
     }
 }
 
 final class PetPanel: NSPanel {
+    override var canBecomeKey: Bool { true }
+    override var canBecomeMain: Bool { false }
+}
+
+final class FatCatMiniChatPanel: NSPanel {
     override var canBecomeKey: Bool { true }
     override var canBecomeMain: Bool { false }
 }
@@ -1396,6 +1478,7 @@ final class PetWindowController: NSObject, NSWindowDelegate {
     private var lastObservedApp: String?
     private var lastObservedWindow: String?
     private var panel: PetPanel!
+    private var miniChatPanel: FatCatMiniChatPanel!
     private var statusItem: NSStatusItem!
     private var secondaryWindows: [NSWindow] = []
     private var cancellables = Set<AnyCancellable>()
@@ -1428,6 +1511,7 @@ final class PetWindowController: NSObject, NSWindowDelegate {
             .sink { [weak self] now in self?.model.handleLife(.tick, at: now) }
             .store(in: &cancellables)
         buildPanel()
+        buildMiniChatPanel()
         buildStatusItem()
     }
 
@@ -1459,6 +1543,7 @@ final class PetWindowController: NSObject, NSWindowDelegate {
     func stop() {
         flightController.stop()
         positionStore.save(PetPosition(x: panel.frame.minX, y: panel.frame.minY))
+        miniChatPanel.orderOut(nil)
         agent.stop()
     }
 
@@ -1472,7 +1557,34 @@ final class PetWindowController: NSObject, NSWindowDelegate {
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         panel.isMovableByWindowBackground = true
         panel.hidesOnDeactivate = false
-        panel.contentView = NSHostingView(rootView: PetRootView(model: model, onClick: { [weak self] in self?.openChat() }, onDragBegan: { [weak self] in self?.flightController.handleDragBegan() }, onDragEnded: { [weak self] in self?.flightController.handleDragEnded() }, onSend: { [weak self] in self?.sendChat() }, onRetry: { [weak self] in self?.retryLastPrompt() }, onReconnect: { [weak self] in self?.agent.reconnect() }, onStop: { [weak self] in self?.stopGeneration() }, onClose: { [weak self] in self?.closeChat() }, onExpand: { [weak self] in self?.toggleExpanded() }, onNewChat: { [weak self] in self?.newChat() }, onSelectConversation: { [weak self] record in self?.selectConversation(record) }, onDeleteConversation: { [weak self] record in self?.deleteConversation(record) }, onRenameConversation: { [weak self] record, title in self?.renameConversation(record, title: title) }))
+        panel.contentView = NSHostingView(rootView: PetRootView(
+            model: model,
+            onClick: { [weak self] in self?.toggleMiniChat() },
+            onDragBegan: { [weak self] in self?.flightController.handleDragBegan() },
+            onDragEnded: { [weak self] in self?.flightController.handleDragEnded() }
+        ))
+    }
+
+    private func buildMiniChatPanel() {
+        miniChatPanel = FatCatMiniChatPanel(
+            contentRect: NSRect(x: 0, y: 0, width: 360, height: 286),
+            styleMask: [.borderless, .nonactivatingPanel],
+            backing: .buffered,
+            defer: false
+        )
+        miniChatPanel.isOpaque = false
+        miniChatPanel.backgroundColor = .clear
+        miniChatPanel.hasShadow = false
+        miniChatPanel.level = .floating
+        miniChatPanel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+        miniChatPanel.hidesOnDeactivate = false
+        miniChatPanel.contentView = NSHostingView(rootView: FatCatMiniChatView(
+            model: model,
+            onSend: { [weak self] in self?.sendChat() },
+            onClose: { [weak self] in self?.closeChat() },
+            onMicrophone: { [weak self] in self?.model.isListening.toggle() },
+            onSpeaker: { [weak self] in self?.model.speakReplies.toggle() }
+        ))
     }
 
     private func buildStatusItem() {
@@ -1481,13 +1593,24 @@ final class PetWindowController: NSObject, NSWindowDelegate {
         statusItem.menu = makeMenu()
     }
 
+    private func toggleMiniChat() {
+        agent.petClicked(conversationID: model.selectedConversationID)
+        if model.isChatOpen { closeChat() } else { openChat() }
+    }
+
     private func openChat() {
-        guard !model.isChatOpen else { return }
+        guard !model.isChatOpen else {
+            positionMiniChat()
+            miniChatPanel.makeKeyAndOrderFront(nil)
+            return
+        }
         flightController.cancelFlight()
         model.handleLife(.userClickedAvatar)
         model.isChatOpen = true
         model.handleLife(.userOpenedChat)
-        panel.makeKeyAndOrderFront(nil)
+        positionMiniChat()
+        miniChatPanel.makeKeyAndOrderFront(nil)
+        panel.orderFrontRegardless()
         resumeSelectedConversation()
     }
 
@@ -1495,11 +1618,23 @@ final class PetWindowController: NSObject, NSWindowDelegate {
         model.isChatOpen = false
         model.isExpanded = false
         model.handleLife(.userClosedChat)
+        model.isListening = false
+        miniChatPanel.orderOut(nil)
         panel.orderFrontRegardless()
     }
 
     private func toggleExpanded() {
         model.isExpanded.toggle()
+    }
+
+    private func positionMiniChat() {
+        let visible = panel.screen?.visibleFrame ?? NSScreen.main?.visibleFrame ?? panel.frame
+        let size = miniChatPanel.frame.size
+        var x = panel.frame.maxX + 12
+        if x + size.width > visible.maxX { x = panel.frame.minX - size.width - 12 }
+        x = min(max(x, visible.minX), visible.maxX - size.width)
+        let y = min(max(panel.frame.midY - size.height / 2, visible.minY), visible.maxY - size.height)
+        miniChatPanel.setFrameOrigin(NSPoint(x: x, y: y))
     }
 
     private func sendChat(promptOverride: String? = nil) {
@@ -1951,6 +2086,7 @@ final class PetWindowController: NSObject, NSWindowDelegate {
     }
 
     func windowDidMove(_ notification: Notification) {
+        if model.isChatOpen { positionMiniChat() }
         // Autonomous flight saves its own landing spot; only persist user moves.
         guard !flightController.isAnimatingWindow else { return }
         positionStore.save(PetPosition(x: panel.frame.minX, y: panel.frame.minY))
