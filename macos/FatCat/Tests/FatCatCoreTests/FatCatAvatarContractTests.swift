@@ -107,6 +107,16 @@ struct FatCatAvatarContractTests {
         #expect(!appMain.contains("launchTask?.cancel()"))
     }
 
+    @Test func flightControllerStartsAfterThePanelIsShownAndHasAnExplicitTestPath() throws {
+        let appMain = try loadText("macos/FatCat/Sources/FatCat/AppMain.swift")
+        #expect(appMain.contains("panel.orderFrontRegardless()\n        agent.requestProviderInventory()\n        flightController.start(panel: panel)"))
+        #expect(appMain.contains("self?.evaluateFlight(now: Date())"))
+        #expect(appMain.contains("try await Task.sleep(for: .seconds(Self.evaluationInterval))"))
+        #expect(appMain.contains("panel.setFrameOrigin(NSPoint(x: frame.position.x, y: frame.position.y))"))
+        #expect(appMain.contains("Button(\"Test flight\", action: testFlight)"))
+        #expect(appMain.contains("bypassIdleAndCooldown: explicit"))
+    }
+
     @Test func electronWorkspaceUsesOneLauncherForAvatarAndMenu() throws {
         let appMain = try loadText("macos/FatCat/Sources/FatCat/AppMain.swift")
         let launcher = try loadText("macos/FatCat/Sources/FatCatCore/FatCatElectronLauncher.swift")

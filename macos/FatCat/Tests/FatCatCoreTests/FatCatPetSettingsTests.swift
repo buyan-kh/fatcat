@@ -12,6 +12,12 @@ struct FatCatPetSettingsTests {
         #expect(settings.previewAnimationKey == nil)
     }
 
+    @Test func movementModesUseTheIntendedIdleIntervals() {
+        #expect(FatCatMovementMode.off.idleInterval.isInfinite)
+        #expect(FatCatMovementMode.calm.idleInterval == 120)
+        #expect(FatCatMovementMode.playful.idleInterval == 60)
+    }
+
     @Test func sizeAndAnimationAreSanitized() {
         #expect(FatCatPetSettings(petSize: 40).petSize == 120)
         #expect(FatCatPetSettings(petSize: 900).petSize == 360)

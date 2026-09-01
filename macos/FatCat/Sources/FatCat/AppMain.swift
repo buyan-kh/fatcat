@@ -177,6 +177,19 @@ struct ReactionCue: Equatable {
     let revision: Int
 }
 
+struct FatCatFlightDiagnostics: Equatable {
+    var movementMode: FatCatMovementMode = .off
+    var secondsSinceMovementStarted: TimeInterval = 0
+    var secondsSinceLastFlight: TimeInterval = .infinity
+    var pendingFlightReason: FatCatFlightReason?
+    var flightState: FatCatFlightState = .grounded
+    var policyBlockReason: FatCatFlightBlockReason?
+    var controllerRunning = false
+    var panelAvailable = false
+    var screenAvailable = false
+    var canTestFlight = false
+}
+
 struct ChatMessage: Identifiable, Equatable {
     let id: UUID
     let role: Role
@@ -215,6 +228,7 @@ final class PetModel: ObservableObject {
     @Published var focusComposerToken = 0
     @Published var flightCue: FlightCue?
     @Published var reactionCue: ReactionCue?
+    @Published var flightDiagnostics = FatCatFlightDiagnostics()
     @Published var isListening = false
     @Published var isSpeaking = false
     @Published var speakReplies = true
@@ -1309,6 +1323,7 @@ final class FatCatFlightController {
     private var animator = FatCatWindowAnimator()
     private var random: SeededRandomSource
     private var currentPlan: FatCatFlightPlan?
+    private var currentFlightIsExplicit = false
     private var flightStartedAt: Date?
     private var lastFlightEndedAt: Date?
     private var movementStartedAt = Date()
@@ -1323,6 +1338,8 @@ final class FatCatFlightController {
     private var frameTask: Task<Void, Never>?
     private(set) var isAnimatingWindow = false
     weak var panel: NSPanel?
+    private var controllerStartedAt: Date?
+    private var lastPolicyDecision: FatCatFlightDecision?
 
     init(model: PetModel, positionStore: PetPositionStore) {
         self.model = model
@@ -1341,6 +1358,7 @@ final class FatCatFlightController {
         set {
             UserDefaults.standard.set(newValue, forKey: Self.positionLockKey)
             if newValue { cancelFlight() }
+            updateDiagnostics(now: Date())
         }
     }
 
@@ -1349,36 +1367,60 @@ final class FatCatFlightController {
         set {
             UserDefaults.standard.set(newValue, forKey: Self.movementPausedKey)
             if newValue { cancelFlight() }
+            updateDiagnostics(now: Date())
         }
     }
 
     func start(panel: NSPanel) {
         self.panel = panel
         movementStartedAt = Date()
+        controllerStartedAt = movementStartedAt
+        lastPolicyDecision = nil
         evaluationTask?.cancel()
         evaluationTask = Task { [weak self] in
+            self?.evaluateFlight(now: Date())
             while !Task.isCancelled {
-                try? await Task.sleep(for: .seconds(Self.evaluationInterval))
-                guard !Task.isCancelled else { return }
-                self?.enqueueAutonomousFlightIfDue()
-                self?.flushPendingFlightIfSafe()
+                do {
+                    try await Task.sleep(for: .seconds(Self.evaluationInterval))
+                } catch {
+                    return
+                }
+                guard let self, !Task.isCancelled else { return }
+                self.evaluateFlight(now: Date())
             }
         }
+        updateDiagnostics(now: Date())
     }
 
     func stop() {
         evaluationTask?.cancel()
+        evaluationTask = nil
         cancelFlight()
+        controllerStartedAt = nil
+        updateDiagnostics(now: Date())
+    }
+
+    func testFlight() {
+        guard controllerStartedAt != nil, machine.state == .grounded, panel != nil else { return }
+        pendingFlight.enqueue(.idleReposition)
+        flushPendingFlightIfSafe(explicit: true)
+        updateDiagnostics(now: Date())
+    }
+
+    func refreshDiagnostics() {
+        updateDiagnostics(now: Date())
     }
 
     func handleDragBegan() {
         isDraggingPet = true
         cancelFlight()
+        updateDiagnostics(now: Date())
     }
 
     func handleDragEnded() {
         isDraggingPet = false
         lastDragEndedAt = Date()
+        updateDiagnostics(now: Date())
     }
 
     func cancelFlight() {
@@ -1387,6 +1429,7 @@ final class FatCatFlightController {
         animator.cancel()
         isAnimatingWindow = false
         currentPlan = nil
+        currentFlightIsExplicit = false
         flightStartedAt = nil
         guard machine.state != .grounded else { return }
         machine.cancel()
@@ -1405,31 +1448,49 @@ final class FatCatFlightController {
     private func handleLifeEvent(_ event: FatCatLifeEvent) {
         guard let cue = FatCatFlightEventPolicy.cue(for: event) else {
             flushPendingFlightIfSafe()
+            updateDiagnostics(now: Date())
             return
         }
         sendReaction(cue.reaction)
         if let reason = cue.flightReason { pendingFlight.enqueue(reason) }
         flushPendingFlightIfSafe()
+        updateDiagnostics(now: Date())
+    }
+
+    private func evaluateFlight(now: Date) {
+        enqueueAutonomousFlightIfDue(now: now)
+        flushPendingFlightIfSafe(now: now)
+        updateDiagnostics(now: now)
+        let diagnostic = model.flightDiagnostics
+        let pending = diagnostic.pendingFlightReason?.rawValue ?? "none"
+        let block = diagnostic.policyBlockReason?.rawValue ?? "none"
+        let idle = String(format: "%.0f", diagnostic.secondsSinceMovementStarted)
+        let last = diagnostic.secondsSinceLastFlight.isFinite ? String(format: "%.0f", diagnostic.secondsSinceLastFlight) : "never"
+        print("[FatCatFlight] mode=\(diagnostic.movementMode.rawValue) state=\(diagnostic.flightState.rawValue) pending=\(pending) block=\(block) running=\(diagnostic.controllerRunning) panel=\(diagnostic.panelAvailable) screen=\(diagnostic.screenAvailable) idle=\(idle)s last=\(last)s")
     }
 
     private func enqueueAutonomousFlightIfDue(now: Date = Date()) {
+        _ = now
         let mode = model.movementMode
         guard mode != .off, pendingFlight.pendingReason == nil else { return }
-        let reference = lastFlightEndedAt ?? movementStartedAt
-        guard now.timeIntervalSince(reference) >= mode.idleInterval else { return }
+        // Idle is measured from actual keyboard/mouse activity, never from
+        // FatCat's observation timer or from the previous evaluation tick.
+        guard Self.secondsSinceUserActivity() >= mode.idleInterval else { return }
         pendingFlight.enqueue(mode == .playful ? .playfulAfterInactivity : .idleReposition)
     }
 
-    private func flushPendingFlightIfSafe() {
+    private func flushPendingFlightIfSafe(explicit: Bool = false, now: Date = Date()) {
         guard machine.state == .grounded,
               let panel,
               !model.isChatOpen,
               let reason = pendingFlight.pendingReason else { return }
         let lifeState = model.life.fatcatState
         guard FatCatFlightPolicy.allowsAutonomousFlight(for: lifeState) else { return }
-        let context = currentContext(now: Date())
-        guard FatCatFlightPolicy.evaluate(reason: reason, context: context) == .allowed else { return }
-        guard let screen = panel.screen ?? NSScreen.main else { return }
+        let context = currentContext(now: now)
+        let decision = FatCatFlightPolicy.evaluate(reason: reason, context: context, bypassIdleAndCooldown: explicit)
+        lastPolicyDecision = decision
+        guard decision == .allowed else { return }
+        guard let screen = panel.screen ?? NSScreen.main, !screen.visibleFrame.isEmpty else { return }
         let preferred = positionStore.load().map { CGPoint(x: $0.x, y: $0.y) }
         let plan = FatCatMovementPlanner.planFlight(
             from: panel.frame.origin,
@@ -1440,12 +1501,15 @@ final class FatCatFlightController {
             random: &random
         )
         _ = pendingFlight.take()
-        beginFlight(plan)
+        beginFlight(plan, explicit: explicit)
+        updateDiagnostics(now: now)
     }
 
-    private func beginFlight(_ plan: FatCatFlightPlan) {
+    private func beginFlight(_ plan: FatCatFlightPlan, explicit: Bool = false) {
         guard machine.transition(to: .preparingToFly) else { return }
+        movementStartedAt = Date()
         currentPlan = plan
+        currentFlightIsExplicit = explicit
         sendFlightCue(phase: "preparing")
         phaseTask = Task { [weak self] in
             try? await Task.sleep(for: .seconds(plan.anticipationDelay))
@@ -1456,7 +1520,13 @@ final class FatCatFlightController {
 
     private func launch(_ plan: FatCatFlightPlan) {
         // The desktop may have changed during anticipation; re-check safety.
-        guard FatCatFlightPolicy.evaluate(reason: plan.reason, context: currentContext(now: Date())) == .allowed else {
+        let decision = FatCatFlightPolicy.evaluate(
+            reason: plan.reason,
+            context: currentContext(now: Date()),
+            bypassIdleAndCooldown: currentFlightIsExplicit
+        )
+        lastPolicyDecision = decision
+        guard decision == .allowed else {
             cancelFlight()
             return
         }
@@ -1506,6 +1576,7 @@ final class FatCatFlightController {
             positionStore.save(PetPosition(x: panel.frame.minX, y: panel.frame.minY))
         }
         currentPlan = nil
+        currentFlightIsExplicit = false
         flightStartedAt = nil
         phaseTask = Task { [weak self] in
             try? await Task.sleep(for: .seconds(plan.settleDuration))
@@ -1517,6 +1588,7 @@ final class FatCatFlightController {
     private func finishSettling() {
         machine.transition(to: .grounded)
         sendFlightCue(phase: "grounded")
+        updateDiagnostics(now: Date())
     }
 
     private func sendFlightCue(phase: String, tiltDegrees: Double = 0, durationMs: Double = 0) {
@@ -1549,7 +1621,9 @@ final class FatCatFlightController {
         context.isWaitingForPermission = model.life.work == .asking
         context.isMeetingActive = Self.frontmostIsMeetingApp()
         context.isFullscreenMediaActive = Self.frontmostWindowIsFullscreen()
-        context.isMovementPaused = isMovementPaused || model.movementMode == .off
+        // Off suppresses autonomous enqueueing; an explicit Test flight still
+        // uses the safety policy and is allowed when the user asks for it.
+        context.isMovementPaused = isMovementPaused
         context.isPositionLocked = isPositionLocked
         context.isAsleep = model.life.asleep || model.life.observationPaused
         context.isReduceMotionEnabled = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
@@ -1558,6 +1632,33 @@ final class FatCatFlightController {
         context.secondsSinceManualDrag = lastDragEndedAt.map { now.timeIntervalSince($0) } ?? .infinity
         context.secondsSinceUserActivity = Self.secondsSinceUserActivity()
         return context
+    }
+
+    private func updateDiagnostics(now: Date) {
+        let context = currentContext(now: now)
+        let pending = pendingFlight.pendingReason
+        let decision: FatCatFlightDecision?
+        if let pending {
+            decision = FatCatFlightPolicy.evaluate(reason: pending, context: context)
+        } else {
+            decision = lastPolicyDecision
+        }
+        let panelAvailable = panel != nil
+        let screenAvailable = panel?.screen?.visibleFrame.isEmpty == false || NSScreen.main?.visibleFrame.isEmpty == false
+        let safeTest = controllerStartedAt != nil && panelAvailable && screenAvailable && machine.state == .grounded && !model.isChatOpen
+            && FatCatFlightPolicy.evaluate(reason: .idleReposition, context: context, bypassIdleAndCooldown: true) == .allowed
+        model.flightDiagnostics = FatCatFlightDiagnostics(
+            movementMode: model.movementMode,
+            secondsSinceMovementStarted: now.timeIntervalSince(movementStartedAt),
+            secondsSinceLastFlight: context.secondsSinceLastFlight,
+            pendingFlightReason: pending,
+            flightState: machine.state,
+            policyBlockReason: decision.flatMap { if case .blocked(let reason) = $0 { return reason }; return nil },
+            controllerRunning: evaluationTask != nil && controllerStartedAt != nil,
+            panelAvailable: panelAvailable,
+            screenAvailable: screenAvailable,
+            canTestFlight: safeTest
+        )
     }
 
     private static func secondsSinceUserActivity() -> TimeInterval {
@@ -2008,8 +2109,13 @@ final class PetWindowController: NSObject, NSWindowDelegate {
     private func setMovementMode(_ mode: FatCatMovementMode) {
         model.movementMode = mode
         if mode == .off { flightController.cancelFlight() }
+        flightController.refreshDiagnostics()
         savePetSettings()
         statusItem.menu = makeMenu()
+    }
+
+    private func testFlight() {
+        flightController.testFlight()
     }
 
     private func setAnimationPreview(_ animationKey: String?) {
@@ -2526,6 +2632,7 @@ final class PetWindowController: NSObject, NSWindowDelegate {
             },
             setPetSize: { [weak self] size in self?.setPetSize(size) },
             setMovementMode: { [weak self] mode in self?.setMovementMode(mode) },
+            testFlight: { [weak self] in self?.testFlight() },
             setSpokenReplies: { [weak self] enabled in self?.setSpokenReplies(enabled) },
             setAnimationPreview: { [weak self] key in self?.setAnimationPreview(key) }
         )
@@ -2591,6 +2698,7 @@ struct SettingsView: View {
     let setDefault: (_ providerID: String, _ model: String) -> Void
     let setPetSize: (_ size: Double) -> Void
     let setMovementMode: (_ mode: FatCatMovementMode) -> Void
+    let testFlight: () -> Void
     let setSpokenReplies: (_ enabled: Bool) -> Void
     let setAnimationPreview: (_ animationKey: String?) -> Void
 
@@ -2632,6 +2740,14 @@ struct SettingsView: View {
                     }
                     .pickerStyle(.segmented)
 
+                    HStack(spacing: 10) {
+                        Button("Test flight", action: testFlight)
+                            .disabled(!model.flightDiagnostics.canTestFlight)
+                        Text(model.flightDiagnostics.canTestFlight ? "Move the native panel now" : "Unavailable while FatCat is busy or protected")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+
                     Toggle(
                         "Speak FatCat's replies",
                         isOn: Binding(get: { model.speakReplies }, set: { enabled in setSpokenReplies(enabled) })
@@ -2654,6 +2770,29 @@ struct SettingsView: View {
                     }
                 }
                 .padding(4)
+            }
+            if ProcessInfo.processInfo.environment["FATCAT_MOVEMENT_DIAGNOSTICS"] == "1" {
+                GroupBox("Movement diagnostics") {
+                    let d = model.flightDiagnostics
+                    let controllerStatus = d.controllerRunning ? "running" : "stopped"
+                    let panelStatus = d.panelAvailable ? "available" : "missing"
+                    let screenStatus = d.screenAvailable ? "available" : "missing"
+                    let lastFlight = d.secondsSinceLastFlight.isFinite ? "\(Int(d.secondsSinceLastFlight))s ago" : "never"
+                    let pendingReason = d.pendingFlightReason?.rawValue ?? "none"
+                    let policyReason = d.policyBlockReason?.rawValue ?? "allowed"
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("mode: \(d.movementMode.rawValue)")
+                        Text("state: \(d.flightState.rawValue)")
+                        Text("controller: \(controllerStatus)")
+                        Text("panel/screen: \(panelStatus) / \(screenStatus)")
+                        Text("movement started: \(Int(d.secondsSinceMovementStarted))s ago")
+                        Text("last flight: \(lastFlight)")
+                        Text("pending: \(pendingReason)")
+                        Text("policy: \(policyReason)")
+                    }
+                    .font(.system(.caption, design: .monospaced))
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                }
             }
             Text("Screen context stays local and is reduced to privacy-filtered structured metadata.").font(.callout).foregroundStyle(.secondary)
             Label(status, systemImage: isPaused ? "pause.circle" : "eye").font(.caption)
@@ -2815,9 +2954,6 @@ final class FatCatAppDelegate: NSObject, NSApplicationDelegate {
         perception = ScreenPerceptionCoordinator()
         windowController = PetWindowController(perception: perception)
         windowController.show()
-        DispatchQueue.main.async { [weak self] in
-            self?.windowController.show()
-        }
     }
 
     func applicationWillTerminate(_ notification: Notification) { windowController.stop() }

@@ -272,6 +272,25 @@ struct FatCatFlightTests {
         #expect(FatCatFlightPolicy.evaluate(reason: .idleReposition, context: context) == .allowed)
     }
 
+    @Test func explicitTestFlightBypassesOnlyIdleAndCooldownGates() {
+        var context = openContext()
+        context.secondsSinceLastFlight = 1
+        context.secondsSinceManualDrag = 1
+        context.secondsSinceUserActivity = 0
+        #expect(FatCatFlightPolicy.evaluate(reason: .idleReposition, context: context) == .blocked(.flightCooldown))
+        #expect(FatCatFlightPolicy.evaluate(reason: .idleReposition, context: context, bypassIdleAndCooldown: true) == .allowed)
+        context.isTyping = true
+        #expect(FatCatFlightPolicy.evaluate(reason: .idleReposition, context: context, bypassIdleAndCooldown: true) == .blocked(.typing))
+    }
+
+    @Test func playfulAutonomousFlightsUseTheNinetySecondCooldown() {
+        var context = openContext()
+        context.secondsSinceLastFlight = 89
+        #expect(FatCatFlightPolicy.evaluate(reason: .playfulAfterInactivity, context: context) == .blocked(.flightCooldown))
+        context.secondsSinceLastFlight = 91
+        #expect(FatCatFlightPolicy.evaluate(reason: .playfulAfterInactivity, context: context) == .allowed)
+    }
+
     @Test func manualDraggingStartsATenMinuteCooldown() {
         var context = openContext()
         context.secondsSinceManualDrag = 599

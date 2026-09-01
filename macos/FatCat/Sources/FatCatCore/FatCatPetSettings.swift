@@ -16,8 +16,8 @@ public enum FatCatMovementMode: String, Codable, CaseIterable, Sendable {
     public var idleInterval: TimeInterval {
         switch self {
         case .off: return .infinity
-        case .calm: return 300
-        case .playful: return 90
+        case .calm: return 120
+        case .playful: return 60
         }
     }
 }

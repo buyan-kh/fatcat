@@ -202,6 +202,7 @@ public enum FatCatFlightDecision: Equatable, Sendable {
 
 public enum FatCatFlightPolicy {
     public static let minimumSecondsBetweenFlights: TimeInterval = 180
+    public static let playfulMinimumSecondsBetweenFlights: TimeInterval = 90
     public static let manualDragCooldown: TimeInterval = 600
     public static let minimumIdleSeconds: TimeInterval = 45
 
@@ -211,7 +212,11 @@ public enum FatCatFlightPolicy {
         .idleReposition, .playfulAfterInactivity, .returnToPreferredAnchor,
     ]
 
-    public static func evaluate(reason: FatCatFlightReason, context: FatCatFlightContext) -> FatCatFlightDecision {
+    public static func evaluate(
+        reason: FatCatFlightReason,
+        context: FatCatFlightContext,
+        bypassIdleAndCooldown: Bool = false
+    ) -> FatCatFlightDecision {
         if context.isDraggingPet { return .blocked(.dragging) }
         if context.isPositionLocked { return .blocked(.positionLocked) }
         if context.isMovementPaused { return .blocked(.movementPaused) }
@@ -227,9 +232,12 @@ public enum FatCatFlightPolicy {
         if context.hasImportantDialog { return .blocked(.importantDialog) }
         if context.isAsleep { return .blocked(.sleeping) }
         if context.isHermesDelicate { return .blocked(.hermesDelicate) }
-        if context.secondsSinceLastFlight < minimumSecondsBetweenFlights { return .blocked(.flightCooldown) }
-        if context.secondsSinceManualDrag < manualDragCooldown { return .blocked(.dragCooldown) }
-        if idleOnlyReasons.contains(reason), context.secondsSinceUserActivity < minimumIdleSeconds {
+        let cooldown = reason == .playfulAfterInactivity
+            ? playfulMinimumSecondsBetweenFlights
+            : minimumSecondsBetweenFlights
+        if !bypassIdleAndCooldown, context.secondsSinceLastFlight < cooldown { return .blocked(.flightCooldown) }
+        if !bypassIdleAndCooldown, context.secondsSinceManualDrag < manualDragCooldown { return .blocked(.dragCooldown) }
+        if !bypassIdleAndCooldown, idleOnlyReasons.contains(reason), context.secondsSinceUserActivity < minimumIdleSeconds {
             return .blocked(.userActive)
         }
         return .allowed
