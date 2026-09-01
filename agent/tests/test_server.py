@@ -68,7 +68,8 @@ class ServerTests(unittest.IsolatedAsyncioTestCase):
             async with listener:
                 native_reader, native_writer = await asyncio.open_unix_connection(str(socket_path))
                 electron_reader, electron_writer = await asyncio.open_unix_connection(str(socket_path))
-                native_writer.write(b'{"version":1,"type":"hello","client":"native_pet"}\n')
+                # Protocol-v1 native clients shipped before the role field existed.
+                native_writer.write(b'{"version":1,"type":"hello"}\n')
                 electron_writer.write(b'{"version":1,"type":"hello","client":"electron_chat"}\n')
                 await native_writer.drain()
                 await electron_writer.drain()
@@ -152,13 +153,22 @@ class ServerTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("secret value", "\n".join(logs.output))
 
     async def test_shutdown_ack_requests_server_shutdown(self):
-        server = PeppaAgentServer(Path("/tmp/peppa-test.sock"), Path("/tmp/peppa-test-home"))
+        server = PeppaAgentServer(Path("/tmp/peppa-test.sock"), Path("/tmp/peppa-test-home"), allow_shutdown=True)
         server.shutdown_event = asyncio.Event()
 
         response = await server.handle_message({"version": 1, "type": "shutdown"}, lambda event: None)
 
         self.assertEqual(response, {"version": 1, "type": "shutdown_ack"})
         self.assertTrue(server.shutdown_event.is_set())
+
+    async def test_persistent_agent_rejects_client_shutdown(self):
+        server = PeppaAgentServer(Path("/tmp/peppa-test.sock"), Path("/tmp/peppa-test-home"), allow_shutdown=False)
+        server.shutdown_event = asyncio.Event()
+
+        response = await server.handle_message({"version": 1, "type": "shutdown", "request_id": "r1"}, lambda event: None)
+
+        self.assertEqual(response["type"], "error")
+        self.assertFalse(server.shutdown_event.is_set())
 
     async def test_agent_initialization_failure_is_a_typed_error_event(self):
         events = []
@@ -183,16 +193,60 @@ class ServerTests(unittest.IsolatedAsyncioTestCase):
             def get_session(self, session_id):
                 return None
 
-        server = PeppaAgentServer(Path("/tmp/peppa-test.sock"), Path("/tmp/peppa-test-home"))
-        server.session_manager = FakeManager()
-        response = await server.handle_message(
-            {"version": 1, "type": "user_message", "request_id": "r1", "session_id": "missing", "text": "hello"},
-            lambda event: None,
-        )
+        with tempfile.TemporaryDirectory() as root:
+            server = PeppaAgentServer(Path(root) / "agent.sock", Path(root) / "Hermes")
+            server.conversation_store.create("c1", "First", root)
+            server.conversation_store.attach_session("c1", "missing")
+            server.session_manager = FakeManager()
+            response = await server.handle_message(
+                {"version": 1, "type": "user_message", "request_id": "r1", "conversation_id": "c1", "session_id": "missing", "text": "hello"},
+                lambda event: None,
+            )
 
         self.assertEqual(response["type"], "error")
         self.assertIn("not loaded", response["message"])
         self.assertEqual(server.sessions, {})
+
+    async def test_post_restart_turn_restores_verified_conversation_mapping(self):
+        class FakeManager:
+            def get_session(self, session_id):
+                return SimpleNamespace(session_id=session_id, cwd="/tmp", agent=SimpleNamespace(), history=[], cancel_event=threading.Event())
+
+        class FakeACPAgent:
+            async def prompt(self, **_kwargs):
+                return SimpleNamespace(stop_reason="end_turn")
+
+        with tempfile.TemporaryDirectory() as root:
+            server = PeppaAgentServer(Path(root) / "agent.sock", Path(root) / "Hermes")
+            server.conversation_store.create("c1", "First", root)
+            server.conversation_store.attach_session("c1", "s1")
+            server.session_manager = FakeManager()
+            server.acp_agent = FakeACPAgent()
+
+            response = await server.handle_message(
+                {"version": 1, "type": "user_message", "request_id": "r1", "conversation_id": "c1", "session_id": "s1", "text": "hello"},
+                lambda event: None,
+            )
+
+            self.assertEqual(response["type"], "state")
+            self.assertEqual(server.session_conversations, {"s1": "c1"})
+            self.assertEqual(server.conversation_store.get("c1")["messages"][0]["text"], "hello")
+            await asyncio.sleep(0)
+
+    async def test_turn_rejects_a_session_owned_by_another_conversation(self):
+        with tempfile.TemporaryDirectory() as root:
+            server = PeppaAgentServer(Path(root) / "agent.sock", Path(root) / "Hermes")
+            server.conversation_store.create("c1", "First", root)
+            server.conversation_store.attach_session("c1", "s1")
+            server.conversation_store.create("c2", "Second", root)
+
+            response = await server.handle_message(
+                {"version": 1, "type": "user_message", "request_id": "r1", "conversation_id": "c2", "session_id": "s1", "text": "hello"},
+                lambda event: None,
+            )
+
+            self.assertEqual(response["type"], "error")
+            self.assertIn("does not own", response["message"])
 
     async def test_new_and_load_use_stable_session_handles(self):
         class FakeManager:
@@ -229,6 +283,31 @@ class ServerTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(first["type"], "session_ready")
         self.assertEqual(loaded["type"], "session_loaded")
         self.assertEqual(first["session_id"], loaded["session_id"])
+
+    async def test_loading_a_session_imports_hermes_history_only_once(self):
+        state = SimpleNamespace(
+            session_id="s1",
+            cwd="/tmp",
+            agent=SimpleNamespace(),
+            history=[{"role": "user", "content": "hello"}, {"role": "assistant", "content": "hi"}],
+        )
+
+        class FakeManager:
+            def update_cwd(self, session_id, cwd):
+                state.cwd = cwd
+                return state if session_id == state.session_id else None
+
+        with tempfile.TemporaryDirectory() as root:
+            server = PeppaAgentServer(Path(root) / "agent.sock", Path(root) / "Hermes")
+            server.conversation_store.create("c1", "First", root)
+            server.conversation_store.attach_session("c1", "s1")
+            server.session_manager = FakeManager()
+            message = {"version": 1, "type": "load_session", "conversation_id": "c1", "session_id": "s1", "cwd": "/tmp"}
+
+            await server.handle_message(message, lambda event: None)
+            await server.handle_message(message, lambda event: None)
+
+            self.assertEqual([item["text"] for item in server.conversation_store.get("c1")["messages"]], ["hello", "hi"])
 
     async def test_prompts_for_one_session_are_serialized(self):
         class SerialAgent:

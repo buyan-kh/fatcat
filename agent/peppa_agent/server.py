@@ -246,10 +246,17 @@ class _FatCatACPBridge:
 
 
 class PeppaAgentServer:
-    def __init__(self, socket_path: Path, hermes_home: Path, config_bridge=None, conversation_store=None):
+    def __init__(self, socket_path: Path, hermes_home: Path, config_bridge=None, conversation_store=None, allow_shutdown: bool | None = None):
         self.socket_path = socket_path
         self.hermes_home = hermes_home
-        self.conversation_store = conversation_store or ConversationStore(hermes_home.parent / "conversations.json")
+        application_support = hermes_home.parent.parent
+        self.conversation_store = conversation_store or ConversationStore(
+            hermes_home.parent / "conversations.json",
+            legacy_paths=[
+                application_support / "fatcat-electron" / "conversations.json",
+                application_support / "FatCat Electron" / "conversations.json",
+            ],
+        )
         self.sessions: dict[str, PeppaAgentSession] = {}
         self.session_conversations: dict[str, str] = {}
         self.session_manager = None
@@ -261,6 +268,7 @@ class PeppaAgentServer:
         self._seen_event_ids: set[str] = set()
         self._seen_event_order: deque[str] = deque()
         self.shutdown_event: asyncio.Event | None = None
+        self.allow_shutdown = allow_shutdown if allow_shutdown is not None else os.environ.get("FATCAT_ALLOW_SHUTDOWN") == "1"
 
     async def start(self) -> None:
         self.loop = asyncio.get_running_loop()
@@ -318,7 +326,9 @@ class PeppaAgentServer:
                     message = json.loads(raw_line)
                     _reject_credentials(message)
                     if message.get("type") == "hello":
-                        role = str(message.get("client") or "")
+                        # Protocol-v1 clients released before client roles were added
+                        # are native pet clients. Keep them working during upgrades.
+                        role = str(message.get("client") or "native_pet")
                         if role not in {"native_pet", "electron_chat"}:
                             raise ValueError("hello.client must be native_pet or electron_chat")
                         if client_id is None:
@@ -334,7 +344,7 @@ class PeppaAgentServer:
                     response = await self.handle_message(message, self.broadcast)
                     if response is not None:
                         await emit(response)
-                    if message.get("type") == "shutdown":
+                    if message.get("type") == "shutdown" and self.allow_shutdown:
                         break
                 except Exception as error:
                     await emit(_event("error", request_id=None, message=str(error)))
@@ -389,6 +399,23 @@ class PeppaAgentServer:
                 conversation_id=message.get("conversation_id"),
             ))
             return None
+        if message_type == "conversation_rename":
+            self.conversation_store.rename(
+                self._required_text(message, "conversation_id"),
+                self._required_text(message, "title"),
+            )
+            await self.broadcast(_event("conversation_snapshot", **self.conversation_store.snapshot()))
+            return None
+        if message_type == "conversation_delete":
+            conversation_id = self._required_text(message, "conversation_id")
+            record = self.conversation_store.get(conversation_id)
+            self.conversation_store.delete(conversation_id)
+            if record and record.get("session_id"):
+                session_id = str(record["session_id"])
+                self.session_conversations.pop(session_id, None)
+                self.sessions.pop(session_id, None)
+            await self.broadcast(_event("conversation_snapshot", **self.conversation_store.snapshot()))
+            return None
         if message_type == "new_session":
             manager = self._require_session_manager()
             conversation_id = str(message.get("conversation_id") or "")
@@ -439,12 +466,18 @@ class PeppaAgentServer:
             self.sessions[session_id] = PeppaAgentSession(
                 session_id, cwd, self.broadcast, self.loop or asyncio.get_running_loop(), state, manager, self.acp_agent
             )
+            if not existing.get("messages"):
+                for index, item in enumerate(state.history):
+                    role = str(item.get("role") or "")
+                    text = item.get("content")
+                    if role in {"user", "assistant"} and isinstance(text, str) and text:
+                        self.conversation_store.append_message(
+                            conversation_id,
+                            f"history-{session_id}-{index}",
+                            role,
+                            text,
+                        )
             await self.broadcast(_event("conversation_snapshot", **self.conversation_store.snapshot()))
-            for item in state.history:
-                role = str(item.get("role") or "")
-                text = item.get("content")
-                if role in {"user", "assistant"} and isinstance(text, str) and text:
-                    await emit(_event("session_history", conversation_id=conversation_id, session_id=session_id, role=role, text=text))
             return _event("session_loaded", request_id=request_id, conversation_id=conversation_id, session_id=session_id)
         if message_type == "list_sessions":
             manager = self._require_session_manager()
@@ -495,6 +528,12 @@ class PeppaAgentServer:
         if message_type == "observation":
             return None
         if message_type == "shutdown":
+            if not self.allow_shutdown:
+                return _event(
+                    "error",
+                    request_id=str(message.get("request_id") or uuid.uuid4()),
+                    message="Shutdown is unavailable for the persistent FatCat Agent.",
+                )
             if self.shutdown_event is not None:
                 self.shutdown_event.set()
             return _event("shutdown_ack")
@@ -502,16 +541,14 @@ class PeppaAgentServer:
             raise ValueError(f"unsupported message type: {message_type}")
         session_id = str(message.get("session_id") or "")
         request_id = str(message.get("request_id") or uuid.uuid4())
-        conversation_id = str(message.get("conversation_id") or self.session_conversations.get(session_id) or "")
-        if conversation_id:
-            self.session_conversations[session_id] = conversation_id
-            self.conversation_store.append_message(conversation_id, request_id, "user", str(message.get("text") or ""))
-            await self.broadcast(_event(
-                "message_added",
-                conversation_id=conversation_id,
-                session_id=session_id,
-                message={"id": request_id, "role": "user", "text": str(message.get("text") or "")},
-            ))
+        conversation_id = self._required_text(message, "conversation_id")
+        record = self.conversation_store.get(conversation_id)
+        if record is None or record.get("session_id") != session_id:
+            return _event(
+                "error",
+                request_id=request_id,
+                message="Conversation does not own the supplied Hermes session.",
+            )
         session = self.sessions.get(session_id)
         if session is None:
             manager = self._require_session_manager()
@@ -522,6 +559,14 @@ class PeppaAgentServer:
                 session_id, state.cwd, self.broadcast, self.loop or asyncio.get_running_loop(), state, manager, self.acp_agent
             )
             self.sessions[session_id] = session
+        self.session_conversations[session_id] = conversation_id
+        self.conversation_store.append_message(conversation_id, request_id, "user", str(message.get("text") or ""))
+        await self.broadcast(_event(
+            "message_added",
+            conversation_id=conversation_id,
+            session_id=session_id,
+            message={"id": request_id, "role": "user", "text": str(message.get("text") or "")},
+        ))
         asyncio.create_task(session.prompt(request_id, str(message.get("text") or "")))
         return _event("state", state="thinking", session_id=session_id, request_id=request_id)
 

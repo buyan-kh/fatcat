@@ -57,6 +57,7 @@ describe('FatCat socket protocol', () => {
         version: 1,
         type: 'user_message',
         request_id: 'r',
+        conversation_id: 'c',
         session_id: 's',
         text: 'hello',
         nested: [{ access_token: 'no' }],
@@ -66,8 +67,8 @@ describe('FatCat socket protocol', () => {
 
   it('encodes one compact newline-delimited command', () => {
     expect(
-      encodeClientCommand({ version: 1, type: 'user_message', request_id: 'r1', session_id: 's1', text: 'Hello' }),
-    ).toBe('{"version":1,"type":"user_message","request_id":"r1","session_id":"s1","text":"Hello"}\n')
+      encodeClientCommand({ version: 1, type: 'user_message', request_id: 'r1', conversation_id: 'c1', session_id: 's1', text: 'Hello' }),
+    ).toBe('{"version":1,"type":"user_message","request_id":"r1","conversation_id":"c1","session_id":"s1","text":"Hello"}\n')
   })
 
   it('identifies clients and encodes typed pet clicks', () => {

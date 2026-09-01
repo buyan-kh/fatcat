@@ -40,7 +40,7 @@ describe('FatCatService', () => {
 
     await service.sendMessage('Hello Hermes')
     const turn = transport.commands.at(-1)
-    expect(turn).toMatchObject({ type: 'user_message', session_id: 's1', text: 'Hello Hermes' })
+    expect(turn).toMatchObject({ type: 'user_message', conversation_id: record.id, session_id: 's1', text: 'Hello Hermes' })
     expect((await service.snapshot()).messages.at(-1)).toMatchObject({ role: 'user', text: 'Hello Hermes' })
 
     transport.event({ version: 1, type: 'assistant_delta', request_id: requestId(turn!), session_id: 's1', text: 'Hello ' })

@@ -14,10 +14,25 @@ class SessionConflict(ValueError):
 
 
 class ConversationStore:
-    def __init__(self, path: Path):
+    def __init__(self, path: Path, legacy_paths: list[Path] | tuple[Path, ...] = ()):
         self.path = path
         self._lock = threading.RLock()
         self._document, migrated = self._load()
+        for legacy_path in legacy_paths:
+            if legacy_path == path:
+                continue
+            try:
+                legacy, _ = self._load_path(legacy_path)
+            except ValueError:
+                continue
+            known_ids = {record["id"] for record in self._document["records"]}
+            additions = [record for record in legacy["records"] if record["id"] not in known_ids]
+            if additions:
+                self._document["records"].extend(additions)
+                migrated = True
+            if self._document["selected_id"] is None and legacy["selected_id"] in {record["id"] for record in self._document["records"]}:
+                self._document["selected_id"] = legacy["selected_id"]
+                migrated = True
         if migrated:
             self._save()
 
@@ -54,6 +69,26 @@ class ConversationStore:
             if self._find(conversation_id) is None:
                 raise KeyError(conversation_id)
             self._document["selected_id"] = conversation_id
+            self._save()
+
+    def rename(self, conversation_id: str, title: str) -> None:
+        title = title.strip()
+        if not title:
+            raise ValueError("title is required")
+        with self._lock:
+            self._required(conversation_id)["title"] = title
+            self._save()
+
+    def delete(self, conversation_id: str) -> None:
+        with self._lock:
+            self._required(conversation_id)
+            self._document["records"] = [
+                record for record in self._document["records"] if record["id"] != conversation_id
+            ]
+            if self._document["selected_id"] == conversation_id:
+                self._document["selected_id"] = (
+                    self._document["records"][0]["id"] if self._document["records"] else None
+                )
             self._save()
 
     def attach_session(self, conversation_id: str, session_id: str) -> None:
@@ -95,8 +130,11 @@ class ConversationStore:
             return deepcopy(message)
 
     def _load(self) -> tuple[dict, bool]:
+        return self._load_path(self.path)
+
+    def _load_path(self, path: Path) -> tuple[dict, bool]:
         try:
-            value = json.loads(self.path.read_text(encoding="utf-8"))
+            value = json.loads(path.read_text(encoding="utf-8"))
         except FileNotFoundError:
             return {"selected_id": None, "records": []}, False
         except (OSError, json.JSONDecodeError) as error:
@@ -114,7 +152,7 @@ class ConversationStore:
             conversation_id = raw["id"].strip()
             title = raw.get("title") if isinstance(raw.get("title"), str) else "New chat"
             workspace = raw.get("workspace_path") or raw.get("workspacePath") or str(Path.home())
-            session_id = raw.get("session_id") or raw.get("hermesSessionID")
+            session_id = raw.get("session_id") or raw.get("hermesSessionID") or raw.get("hermesSessionId")
             messages = []
             for index, message in enumerate(raw.get("messages") if isinstance(raw.get("messages"), list) else []):
                 if not isinstance(message, dict):
@@ -134,7 +172,7 @@ class ConversationStore:
                 "session_id": session_id if isinstance(session_id, str) and session_id.strip() else None,
                 "messages": messages,
             })
-        selected_id = value.get("selected_id") or value.get("selectedID")
+        selected_id = value.get("selected_id") or value.get("selectedID") or value.get("selectedId")
         if not isinstance(selected_id, str) or not any(record["id"] == selected_id for record in records):
             selected_id = None
         return {"selected_id": selected_id, "records": records}

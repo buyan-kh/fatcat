@@ -85,6 +85,7 @@ export class FatCatService extends EventEmitter {
 
   async renameConversation(id: string, title: string): Promise<void> {
     await this.options.repository.update(id, { title })
+    this.transport.send({ version: 1, type: 'conversation_rename', request_id: randomUUID(), conversation_id: id, title: title.trim() })
     await this.emitSnapshot()
   }
 
@@ -92,6 +93,7 @@ export class FatCatService extends EventEmitter {
     const before = await this.options.repository.snapshot()
     const wasSelected = before.selectedId === id
     await this.options.repository.delete(id)
+    this.transport.send({ version: 1, type: 'conversation_delete', request_id: randomUUID(), conversation_id: id })
     if (wasSelected) {
       this.messages = []
       this.activeRequestId = null
@@ -112,7 +114,7 @@ export class FatCatService extends EventEmitter {
     this.activeRequestId = requestId
     this.retryPrompt = normalized
     this.messages.push(message('user', normalized, undefined, requestId))
-    this.transport.send({ version: 1, type: 'user_message', request_id: requestId, session_id: record.hermesSessionId, text: normalized })
+    this.transport.send({ version: 1, type: 'user_message', request_id: requestId, conversation_id: record.id, session_id: record.hermesSessionId, text: normalized })
     await this.options.repository.update(record.id, { lastPreview: normalized })
     await this.emitSnapshot()
   }
@@ -153,8 +155,10 @@ export class FatCatService extends EventEmitter {
     this.connection = { phase: 'connecting', detail: 'Reconnecting to Hermes…' }
     await this.emitSnapshot()
     const next = await this.options.restartAgent()
-    this.transport = next
-    this.bindTransport(next)
+    if (next !== this.transport) {
+      this.transport = next
+      this.bindTransport(next)
+    }
     this.connection = { phase: 'connected', detail: 'Connected' }
     const document = await this.options.repository.snapshot()
     if (document.selectedId) await this.selectConversation(document.selectedId)

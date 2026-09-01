@@ -18,15 +18,8 @@ async function bootstrap(): Promise<void> {
   const socketPath = process.env.FATCAT_AGENT_SOCKET || join(app.getPath('home'), 'Library', 'Application Support', 'FatCat', 'runtime', 'fatcat-agent.sock')
   const sharedTransport = new SocketTransport(socketPath)
   transport = sharedTransport
-  const repository = await ConversationRepository.open(join(userData, 'conversations.json'))
+  const repository = await ConversationRepository.open(join(userData, 'electron-conversations-cache.json'))
   windowState = await WindowStateStore.open(join(userData, 'window.json'))
-
-  let startupError: string | null = null
-  try {
-    await sharedTransport.connect()
-  } catch (error) {
-    startupError = errorMessage(error)
-  }
 
   service = new FatCatService({
     repository,
@@ -47,6 +40,12 @@ async function bootstrap(): Promise<void> {
     },
   })
   service.on('event', (event) => mainWindow?.webContents.send(FATCAT_EVENT_CHANNEL, event))
+  let startupError: string | null = null
+  try {
+    await sharedTransport.connect()
+  } catch (error) {
+    startupError = errorMessage(error)
+  }
   if (startupError) {
     queueMicrotask(() => sharedTransport.emit('status', { phase: 'failed', detail: startupError }))
   }

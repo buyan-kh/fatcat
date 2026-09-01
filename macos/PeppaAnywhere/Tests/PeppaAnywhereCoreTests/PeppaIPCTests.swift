@@ -54,6 +54,7 @@ struct PeppaIPCTests {
     @Test func encodesTypedMessagesAsOneNewlineDelimitedRecord() throws {
         let message = PeppaIPCMessage.userMessage(
             requestID: "request-1",
+            conversationID: "conversation-1",
             sessionID: "session-1",
             text: "What is open?"
         )
@@ -111,6 +112,8 @@ struct PeppaIPCTests {
         let messages: [PeppaIPCMessage] = [
             .newSession(requestID: "r1", conversationID: "c1", cwd: "/Users/me/Code"),
             .loadSession(requestID: "r2", conversationID: "c1", sessionID: "s1", cwd: "/Users/me/Code"),
+            .conversationRename(requestID: "r4", conversationID: "c1", title: "Renamed"),
+            .conversationDelete(requestID: "r5", conversationID: "c1"),
             .listSessions(requestID: "r0", cwd: nil),
             .sessionReady(requestID: "r1", conversationID: "c1", sessionID: "s1"),
             .sessionLoaded(requestID: "r2", conversationID: "c1", sessionID: "s1"),

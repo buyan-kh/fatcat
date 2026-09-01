@@ -11,5 +11,6 @@ describe('Electron shared-agent lifecycle', () => {
     expect(source).not.toContain('new AgentSupervisor')
     expect(source).not.toContain('supervisor?.stop')
     expect(source).not.toContain("from './agent/agent-supervisor'")
+    expect(source.indexOf('new FatCatService')).toBeLessThan(source.indexOf('await sharedTransport.connect()'))
   })
 })

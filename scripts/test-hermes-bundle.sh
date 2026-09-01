@@ -46,7 +46,7 @@ if [[ -n "$developer_path_matches" ]]; then
 fi
 socket="$test_parent/agent.sock"
 home="$test_parent/hermes-home"
-"$stage/PeppaAgent" --socket "$socket" --hermes-home "$home" >/dev/null 2>&1 &
+FATCAT_ALLOW_SHUTDOWN=1 "$stage/PeppaAgent" --socket "$socket" --hermes-home "$home" >/dev/null 2>&1 &
 agent_pid=$!
 for _ in $(seq 1 50); do
   [[ -S "$socket" ]] && break

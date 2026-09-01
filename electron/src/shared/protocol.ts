@@ -7,10 +7,12 @@ const base = { version: z.literal(1) }
 const clientRole = z.enum(['native_pet', 'electron_chat'])
 const hello = z.object({ ...base, type: z.literal('hello'), client: clientRole }).strict()
 const petClickedCommand = z.object({ ...base, type: z.literal('pet_clicked'), event_id: id, pet_id: id, conversation_id: id.nullable().optional() }).strict()
+const conversationRename = z.object({ ...base, type: z.literal('conversation_rename'), request_id: id, conversation_id: id, title: id }).strict()
+const conversationDelete = z.object({ ...base, type: z.literal('conversation_delete'), request_id: id, conversation_id: id }).strict()
 const newSession = z.object({ ...base, type: z.literal('new_session'), request_id: id, conversation_id: id, cwd: z.string().min(1) }).strict()
 const loadSession = z.object({ ...base, type: z.literal('load_session'), request_id: id, conversation_id: id, session_id: id, cwd: z.string().min(1) }).strict()
 const listSessions = z.object({ ...base, type: z.literal('list_sessions'), request_id: id, cwd: z.string().nullable() }).strict()
-const userMessage = z.object({ ...base, type: z.literal('user_message'), request_id: id, session_id: id, text: z.string().min(1) }).strict()
+const userMessage = z.object({ ...base, type: z.literal('user_message'), request_id: id, conversation_id: id, session_id: id, text: z.string().min(1) }).strict()
 const cancel = z.object({ ...base, type: z.literal('cancel'), request_id: id, session_id: id }).strict()
 const providerInventory = z.object({ ...base, type: z.literal('provider_inventory'), request_id: id }).strict()
 const providerModels = z.object({ ...base, type: z.literal('provider_models'), request_id: id, provider_id: id, refresh: z.boolean() }).strict()
@@ -23,6 +25,8 @@ const shutdown = z.object({ ...base, type: z.literal('shutdown') }).strict()
 export const clientCommandSchema = z.discriminatedUnion('type', [
   hello,
   petClickedCommand,
+  conversationRename,
+  conversationDelete,
   newSession,
   loadSession,
   listSessions,

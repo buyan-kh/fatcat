@@ -70,6 +70,42 @@ class ConversationStoreTests(unittest.TestCase):
             self.assertNotIn("selectedID", persisted)
             self.assertNotIn("workspacePath", persisted["records"][0])
 
+    def test_agent_owns_rename_and_delete_mutations(self):
+        with tempfile.TemporaryDirectory() as root:
+            store = ConversationStore(Path(root) / "conversations.json")
+            store.create("conversation-1", "First", root)
+            store.create("conversation-2", "Second", root)
+
+            store.rename("conversation-1", "Renamed")
+            store.delete("conversation-2")
+
+            snapshot = store.snapshot()
+            self.assertEqual([record["id"] for record in snapshot["records"]], ["conversation-1"])
+            self.assertEqual(snapshot["records"][0]["title"], "Renamed")
+            self.assertEqual(snapshot["selected_id"], "conversation-1")
+
+    def test_legacy_electron_metadata_is_imported_once(self):
+        with tempfile.TemporaryDirectory() as root:
+            canonical = Path(root) / "FatCat" / "conversations.json"
+            legacy = Path(root) / "fatcat-electron" / "conversations.json"
+            legacy.parent.mkdir(parents=True)
+            legacy.write_text(json.dumps({
+                "selectedId": "electron-1",
+                "records": [{
+                    "id": "electron-1",
+                    "title": "Electron chat",
+                    "workspacePath": root,
+                    "hermesSessionId": "session-1",
+                }],
+            }), encoding="utf-8")
+
+            first = ConversationStore(canonical, legacy_paths=[legacy]).snapshot()
+            second = ConversationStore(canonical, legacy_paths=[legacy]).snapshot()
+
+            self.assertEqual(first, second)
+            self.assertEqual(first["selected_id"], "electron-1")
+            self.assertEqual(first["records"][0]["session_id"], "session-1")
+
 
 if __name__ == "__main__":
     unittest.main()

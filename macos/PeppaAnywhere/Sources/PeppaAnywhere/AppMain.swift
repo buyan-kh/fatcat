@@ -340,13 +340,21 @@ final class PeppaAgentClient: ObservableObject {
         if let baseURL { request(.providerSetBaseURL(requestID: UUID().uuidString, providerID: providerID, baseURL: baseURL)) }
     }
 
-    func send(text: String, sessionID: String, observation: ObservationPayload?, requestID: String = UUID().uuidString) {
+    func send(text: String, conversationID: String, sessionID: String, observation: ObservationPayload?, requestID: String = UUID().uuidString) {
         launchTask?.cancel()
         launchTask = Task { [weak self] in
             guard let self else { return }
             await self.ensureConnected()
-            try? self.write(.userMessage(requestID: requestID, sessionID: sessionID, text: Self.prompt(text, observation: observation)))
+            try? self.write(.userMessage(requestID: requestID, conversationID: conversationID, sessionID: sessionID, text: Self.prompt(text, observation: observation)))
         }
+    }
+
+    func renameConversation(conversationID: String, title: String) {
+        request(.conversationRename(requestID: UUID().uuidString, conversationID: conversationID, title: title))
+    }
+
+    func deleteConversation(conversationID: String) {
+        request(.conversationDelete(requestID: UUID().uuidString, conversationID: conversationID))
     }
 
     func send(observation: ObservationPayload) {
@@ -1068,6 +1076,8 @@ final class FatCatVoiceController {
     private let recognizer = SFSpeechRecognizer(locale: Locale.current)
     private var request: SFSpeechAudioBufferRecognitionRequest?
     private var task: SFSpeechRecognitionTask?
+    private var permissionTask: Task<Void, Never>?
+    private var permissionGeneration = 0
     private(set) var isListening = false
 
     func toggleListening() {
@@ -1079,7 +1089,14 @@ final class FatCatVoiceController {
     }
 
     func stopListening() {
-        guard isListening || task != nil else { return }
+        permissionGeneration += 1
+        permissionTask?.cancel()
+        permissionTask = nil
+        stopAudioCapture()
+    }
+
+    private func stopAudioCapture() {
+        guard isListening || task != nil || request != nil || audioEngine.isRunning else { return }
         audioEngine.stop()
         audioEngine.inputNode.removeTap(onBus: 0)
         request?.endAudio()
@@ -1090,16 +1107,22 @@ final class FatCatVoiceController {
     }
 
     private func requestPermissionsAndStart() {
+        permissionGeneration += 1
+        let generation = permissionGeneration
+        permissionTask?.cancel()
         onStatus?("Checking microphone access…")
-        Task { [weak self] in
+        permissionTask = Task { [weak self] in
             async let speechStatus = Self.requestSpeechAuthorization()
             async let microphoneAllowed = AVCaptureDevice.requestAccess(for: .audio)
             guard let self else { return }
+            guard !Task.isCancelled, generation == self.permissionGeneration else { return }
             guard await speechStatus == .authorized, await microphoneAllowed else {
                 self.onStatus?("Allow Microphone and Speech Recognition in System Settings.")
                 self.setListening(false)
                 return
             }
+            guard !Task.isCancelled, generation == self.permissionGeneration else { return }
+            self.permissionTask = nil
             self.startListening()
         }
     }
@@ -1111,7 +1134,7 @@ final class FatCatVoiceController {
     }
 
     private func startListening() {
-        stopListening()
+        stopAudioCapture()
         guard let recognizer, recognizer.isAvailable else {
             onStatus?("Speech recognition is unavailable right now.")
             return
@@ -1767,7 +1790,7 @@ final class PetWindowController: NSObject, NSWindowDelegate {
             model: model,
             onSend: { [weak self] in self?.sendChat() },
             onClose: { [weak self] in self?.closeChat() },
-            onMicrophone: { [weak self] in self?.voiceController.toggleListening() },
+            onMicrophone: { [weak self] in self?.toggleVoiceInput() },
             onSpeaker: { [weak self] in self?.toggleSpokenReplies() }
         ))
     }
@@ -1876,6 +1899,11 @@ final class PetWindowController: NSObject, NSWindowDelegate {
         setSpokenReplies(!model.speakReplies)
     }
 
+    private func toggleVoiceInput() {
+        speechController.stop()
+        voiceController.toggleListening()
+    }
+
     private func setSpokenReplies(_ enabled: Bool) {
         model.speakReplies = enabled
         if !enabled { speechController.stop() }
@@ -1922,7 +1950,7 @@ final class PetWindowController: NSObject, NSWindowDelegate {
         let requestID = UUID().uuidString
         model.currentRequestID = requestID
         model.isGenerating = true
-        agent.send(text: text, sessionID: sessionID, observation: observation, requestID: requestID)
+        agent.send(text: text, conversationID: conversationID, sessionID: sessionID, observation: observation, requestID: requestID)
     }
 
     private func startNextPendingPrompt(for conversationID: String, sessionID: String) {
@@ -1993,6 +2021,7 @@ final class PetWindowController: NSObject, NSWindowDelegate {
 
     private func deleteConversation(_ record: FatCatConversationRecord) {
         if model.selectedConversationID == record.id { abandonActiveTurn(); activeSessionID = nil }
+        agent.deleteConversation(conversationID: record.id)
         try? conversationStore.delete(recordID: record.id)
         model.conversations = conversationStore.records
         model.selectedConversationID = conversationStore.selectedID
@@ -2008,6 +2037,7 @@ final class PetWindowController: NSObject, NSWindowDelegate {
     private func renameConversation(_ record: FatCatConversationRecord, title: String) {
         let title = title.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !title.isEmpty else { return }
+        agent.renameConversation(conversationID: record.id, title: title)
         try? conversationStore.update(recordID: record.id, title: title)
         model.conversations = conversationStore.records
     }
@@ -2036,8 +2066,8 @@ final class PetWindowController: NSObject, NSWindowDelegate {
 
     private static func makeConversationStore() -> FatCatConversationStore {
         let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("FatCat", isDirectory: true)
-        let url = support.appendingPathComponent("conversations.json")
-        return (try? FatCatConversationStore(fileURL: url)) ?? (try! FatCatConversationStore(fileURL: FileManager.default.temporaryDirectory.appendingPathComponent("fatcat-conversations.json")))
+        let url = support.appendingPathComponent("native-conversations-cache.json")
+        return (try? FatCatConversationStore(fileURL: url)) ?? (try! FatCatConversationStore(fileURL: FileManager.default.temporaryDirectory.appendingPathComponent("fatcat-native-conversations-cache.json")))
     }
 
     private func handleAgentMessage(_ message: PeppaIPCMessage) {
@@ -2170,7 +2200,7 @@ final class PetWindowController: NSObject, NSWindowDelegate {
             guard conversationID == model.selectedConversationID else { return }
             if role == "user" { model.appendUser(text) }
             else if role == "assistant" { let requestID = UUID().uuidString; model.beginAssistant(requestID: requestID); model.appendAssistant(text, requestID: requestID); model.completeAssistant(requestID: requestID) }
-        case .newSession, .loadSession, .listSessions, .sessionList, .cancel, .hello, .clientHello, .helloAck, .petClicked, .userMessage, .observation, .shutdown, .shutdownAck,
+        case .newSession, .loadSession, .listSessions, .sessionList, .cancel, .hello, .clientHello, .helloAck, .petClicked, .conversationRename, .conversationDelete, .userMessage, .observation, .shutdown, .shutdownAck,
              .providerInventory, .providerModels, .providerSetDefault, .providerSetCredentialRef, .providerSetBaseURL, .providerValidate:
             break
         }
