@@ -111,18 +111,20 @@ public struct PanelBounds: Equatable, Sendable {
 public struct PetPosition: Codable, Equatable, Sendable {
     public let x: Double
     public let y: Double
+    public let screenID: UInt32?
 
-    public init(x: Double, y: Double) {
+    public init(x: Double, y: Double, screenID: UInt32? = nil) {
         self.x = x
         self.y = y
+        self.screenID = screenID
     }
 
     public func clamped(to bounds: PanelBounds) -> PetPosition {
-        PetPosition(x: min(max(x, 0), max(bounds.width, 0)), y: min(max(y, 0), max(bounds.height, 0)))
+        PetPosition(x: min(max(x, 0), max(bounds.width, 0)), y: min(max(y, 0), max(bounds.height, 0)), screenID: screenID)
     }
 
     public static func dragging(origin: PetPosition, startMouse: PetPosition, mouse: PetPosition) -> PetPosition {
-        PetPosition(x: origin.x + mouse.x - startMouse.x, y: origin.y + mouse.y - startMouse.y)
+        PetPosition(x: origin.x + mouse.x - startMouse.x, y: origin.y + mouse.y - startMouse.y, screenID: origin.screenID)
     }
 }
 

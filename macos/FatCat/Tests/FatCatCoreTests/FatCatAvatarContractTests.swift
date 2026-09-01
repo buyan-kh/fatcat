@@ -117,6 +117,16 @@ struct FatCatAvatarContractTests {
         #expect(appMain.contains("bypassIdleAndCooldown: explicit"))
     }
 
+    @Test func restoredPanelPositionUsesTheSavedDisplayInsteadOfTheCurrentMouseDisplay() throws {
+        let appMain = try loadText("macos/FatCat/Sources/FatCat/AppMain.swift")
+        let showStart = try #require(appMain.range(of: "    func show() {"))
+        let showEnd = try #require(appMain[showStart.upperBound...].range(of: "    private static func screenForRestoredPosition"))
+        let show = String(appMain[showStart.lowerBound..<showEnd.lowerBound])
+        #expect(show.contains("screenForRestoredPosition(saved)"))
+        #expect(!show.contains("NSEvent.mouseLocation"))
+        #expect(appMain.contains("screenID: panel.screen.flatMap(Self.displayID)"))
+    }
+
     @Test func electronWorkspaceUsesOneLauncherForAvatarAndMenu() throws {
         let appMain = try loadText("macos/FatCat/Sources/FatCat/AppMain.swift")
         let launcher = try loadText("macos/FatCat/Sources/FatCatCore/FatCatElectronLauncher.swift")

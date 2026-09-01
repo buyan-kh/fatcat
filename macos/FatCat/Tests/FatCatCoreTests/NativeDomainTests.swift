@@ -43,9 +43,14 @@ struct NativeDomainTests {
         defer { defaults.removePersistentDomain(forName: suiteName) }
 
         let store = PetPositionStore(defaults: defaults)
-        store.save(PetPosition(x: 940, y: -40))
-        #expect(store.load() == PetPosition(x: 940, y: -40))
-        #expect(store.load()?.clamped(to: PanelBounds(width: 800, height: 600)) == PetPosition(x: 800, y: 0))
+        store.save(PetPosition(x: 940, y: -40, screenID: 42))
+        #expect(store.load() == PetPosition(x: 940, y: -40, screenID: 42))
+        #expect(store.load()?.clamped(to: PanelBounds(width: 800, height: 600)) == PetPosition(x: 800, y: 0, screenID: 42))
+    }
+
+    @Test func olderPositionsDecodeWithoutAStoredScreenID() throws {
+        let legacy = try JSONDecoder().decode(PetPosition.self, from: Data(#"{"x":12,"y":34}"#.utf8))
+        #expect(legacy == PetPosition(x: 12, y: 34))
     }
 
     @Test func petWindowDragFollowsTheCursorOneToOne() {

@@ -1573,7 +1573,8 @@ final class FatCatFlightController {
         lastFlightEndedAt = Date()
         try? flightLog.append(FatCatFlightLogEntry(reason: plan.reason, date: Date(), from: plan.origin, to: plan.destination))
         if let panel {
-            positionStore.save(PetPosition(x: panel.frame.minX, y: panel.frame.minY))
+            let screenID = panel.screen.flatMap { ( $0.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber)?.uint32Value }
+            positionStore.save(PetPosition(x: panel.frame.minX, y: panel.frame.minY, screenID: screenID))
         }
         currentPlan = nil
         currentFlightIsExplicit = false
@@ -1949,10 +1950,12 @@ final class PetWindowController: NSObject, NSWindowDelegate {
     }
 
     func show() {
-        let screen = (NSScreen.screens.first { $0.frame.contains(NSEvent.mouseLocation) }?.visibleFrame
+        let saved = positionStore.load()
+        let screen = Self.screenForRestoredPosition(saved)
             ?? NSScreen.main?.visibleFrame
-            ?? NSRect(x: 80, y: 80, width: 1200, height: 800))
-        if let saved = positionStore.load() {
+            ?? NSScreen.screens.first?.visibleFrame
+            ?? NSRect(x: 80, y: 80, width: 1200, height: 800)
+        if let saved {
             let bounds = PanelBounds(width: screen.width - model.petSize, height: screen.height - model.petSize)
             let relative = PetPosition(x: saved.x - screen.minX, y: saved.y - screen.minY).clamped(to: bounds)
             panel.setFrameOrigin(NSPoint(x: relative.x + screen.minX, y: relative.y + screen.minY))
@@ -1964,11 +1967,25 @@ final class PetWindowController: NSObject, NSWindowDelegate {
         flightController.start(panel: panel)
     }
 
+    private static func screenForRestoredPosition(_ saved: PetPosition?) -> NSRect? {
+        guard let saved else { return nil }
+        if let screenID = saved.screenID,
+           let screen = NSScreen.screens.first(where: { displayID($0) == screenID }) {
+            return screen.visibleFrame
+        }
+        let point = NSPoint(x: saved.x, y: saved.y)
+        return NSScreen.screens.first(where: { $0.frame.contains(point) })?.visibleFrame
+    }
+
+    private static func displayID(_ screen: NSScreen) -> UInt32? {
+        (screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber)?.uint32Value
+    }
+
     func stop() {
         flightController.stop()
         voiceController.stopListening()
         speechController.stop()
-        positionStore.save(PetPosition(x: panel.frame.minX, y: panel.frame.minY))
+        positionStore.save(currentPanelPosition())
         miniChatPanel.orderOut(nil)
         agent.stop()
     }
@@ -2101,7 +2118,7 @@ final class PetWindowController: NSObject, NSWindowDelegate {
             display: true,
             animate: false
         )
-        positionStore.save(PetPosition(x: panel.frame.minX, y: panel.frame.minY))
+        positionStore.save(currentPanelPosition())
         if model.isChatOpen { positionMiniChat() }
         savePetSettings()
     }
@@ -2681,7 +2698,11 @@ final class PetWindowController: NSObject, NSWindowDelegate {
         if model.isChatOpen { positionMiniChat() }
         // Autonomous flight saves its own landing spot; only persist user moves.
         guard !flightController.isAnimatingWindow else { return }
-        positionStore.save(PetPosition(x: panel.frame.minX, y: panel.frame.minY))
+        positionStore.save(currentPanelPosition())
+    }
+
+    private func currentPanelPosition() -> PetPosition {
+        PetPosition(x: panel.frame.minX, y: panel.frame.minY, screenID: panel.screen.flatMap(Self.displayID))
     }
 
 }
