@@ -78,7 +78,7 @@ export function AppSidebar({ conversations, selectedId, collapsed, connection, o
         </div>}
 
         <div className={cn('mx-2 mt-8 border-t-[0.5px] border-border/70 pt-3', collapsed && 'border-transparent')}>
-          <button type="button" onClick={onOpenSettings} aria-label="Settings" className={cn('flex h-9 w-full items-center gap-1 rounded-[10px] px-2 text-[13px] font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground', collapsed && 'justify-center px-0')}>
+          <button type="button" onClick={onOpenSettings} aria-label="Settings" className={cn('flex h-9 w-full items-center gap-1 rounded-[10px] px-2 text-[13px] leading-6 font-normal text-muted-foreground transition-colors hover:bg-accent hover:text-foreground', collapsed && 'justify-center px-0')}>
             <GearSix size={17} />
             {!collapsed && <><span className="flex-1 text-left">Settings</span><span className={cn('size-1.5 rounded-full', connection.phase === 'connected' ? 'bg-emerald-500' : 'bg-muted-foreground')} /></>}
           </button>
@@ -89,12 +89,12 @@ export function AppSidebar({ conversations, selectedId, collapsed, connection, o
 }
 
 function RailButton({ icon, label, count, onClick, className }: { icon: ReactNode; label: string; count?: string; onClick?: () => void; className?: string }) {
-  return <button type="button" onClick={onClick} className={cn('mx-2 flex h-9 items-center gap-1 rounded-[10px] px-2 text-left text-[13px] font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground', className)}><span className="flex size-5 shrink-0 items-center justify-center">{icon}</span><span className="min-w-0 flex-1 truncate">{label}</span>{count && <span className="mr-2 shrink-0 text-[12px] tabular-nums text-muted-foreground">{count}</span>}</button>
+  return <button type="button" onClick={onClick} className={cn('mx-2 flex h-9 items-center gap-1 rounded-[10px] px-2 text-left text-[13px] leading-6 font-normal text-muted-foreground transition-colors hover:bg-accent hover:text-foreground', className)}><span className="flex size-5 shrink-0 items-center justify-center">{icon}</span><span className="min-w-0 flex-1 truncate">{label}</span>{count && <span className="mr-2 shrink-0 text-[12px] tabular-nums text-muted-foreground">{count}</span>}</button>
 }
 
 function RecentRow({ conversation, active, onSelect, onRename, onDelete }: { conversation: ConversationRecord; active: boolean; onSelect: (id: string) => void; onRename: (id: string, title: string) => void; onDelete: (id: string) => void }) {
   return <div className={cn('group relative mx-2 flex h-9 items-center rounded-[10px] transition-colors', active ? 'bg-accent' : 'hover:bg-accent/70')}>
-    <button type="button" title={conversation.title} aria-label={`${conversation.title}. ${conversation.lastPreview}`} onClick={() => onSelect(conversation.id)} className="min-w-0 flex-1 truncate rounded-[10px] px-2 text-left text-[13px] leading-5 font-medium text-foreground/80 outline-none focus-visible:ring-2 focus-visible:ring-ring">{conversation.title}</button>
+    <button type="button" title={conversation.title} aria-label={`${conversation.title}. ${conversation.lastPreview}`} onClick={() => onSelect(conversation.id)} className="min-w-0 flex-1 truncate rounded-[10px] px-2 text-left text-[13px] leading-6 font-normal text-foreground/80 outline-none focus-visible:ring-2 focus-visible:ring-ring">{conversation.title}</button>
     <DropdownMenu>
       <DropdownMenuTrigger asChild><Button variant="ghost" size="icon-xs" aria-label={`Actions for ${conversation.title}`} className="mr-1 opacity-0 group-hover:opacity-100 data-[state=open]:opacity-100"><Archive className="size-3.5" /></Button></DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-36"><DropdownMenuItem onSelect={() => onRename(conversation.id, conversation.title)}>Rename</DropdownMenuItem><DropdownMenuItem variant="destructive" onSelect={() => onDelete(conversation.id)}>Delete</DropdownMenuItem></DropdownMenuContent>
