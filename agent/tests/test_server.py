@@ -1,4 +1,5 @@
 import asyncio
+import socket
 import threading
 import tempfile
 import time
@@ -16,6 +17,30 @@ class MissingProviderAgentSession(PeppaAgentSession):
 
 
 class ServerTests(unittest.IsolatedAsyncioTestCase):
+    async def test_live_agent_socket_is_never_replaced_but_stale_socket_is_recovered(self):
+        with tempfile.TemporaryDirectory() as root:
+            socket_path = Path(root) / "fatcat.sock"
+            async def close_client(_reader, writer):
+                writer.close()
+                await writer.wait_closed()
+
+            listener = await asyncio.start_unix_server(close_client, path=str(socket_path))
+            server = PeppaAgentServer(socket_path, Path(root) / "Hermes")
+            try:
+                with self.assertRaisesRegex(RuntimeError, "already running"):
+                    await server.claim_socket_path()
+                self.assertTrue(socket_path.exists())
+            finally:
+                listener.close()
+                await listener.wait_closed()
+                socket_path.unlink(missing_ok=True)
+
+            stale = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+            stale.bind(str(socket_path))
+            stale.close()
+            await server.claim_socket_path()
+            self.assertFalse(socket_path.exists())
+
     async def test_two_identified_clients_receive_one_deduplicated_pet_click(self):
         with tempfile.TemporaryDirectory() as root:
             socket_path = Path(root) / "fatcat.sock"

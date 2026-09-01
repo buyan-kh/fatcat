@@ -260,10 +260,7 @@ class PeppaAgentServer:
     async def start(self) -> None:
         self.loop = asyncio.get_running_loop()
         self.socket_path.parent.mkdir(parents=True, exist_ok=True)
-        try:
-            self.socket_path.unlink()
-        except FileNotFoundError:
-            pass
+        await self.claim_socket_path()
         os.environ["HERMES_HOME"] = str(self.hermes_home)
         # Use Hermes ACP's SessionManager as the source of truth. It persists
         # the ACP session and restores it from Hermes' state database after a
@@ -287,6 +284,19 @@ class PeppaAgentServer:
                 self.socket_path.unlink()
             except FileNotFoundError:
                 pass
+
+    async def claim_socket_path(self) -> None:
+        """Remove only an abandoned socket; never displace a live agent."""
+        if not self.socket_path.exists():
+            return
+        try:
+            _reader, writer = await asyncio.open_unix_connection(str(self.socket_path))
+        except (ConnectionRefusedError, FileNotFoundError):
+            self.socket_path.unlink(missing_ok=True)
+            return
+        writer.close()
+        await writer.wait_closed()
+        raise RuntimeError(f"FatCat Agent is already running at {self.socket_path}")
 
     async def handle_client(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
         client_id: str | None = None
