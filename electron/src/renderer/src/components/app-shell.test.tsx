@@ -4,6 +4,7 @@ import { describe, expect, it, vi } from 'vitest'
 import type { ConversationRecord } from '@shared/chat'
 import { AppSidebar } from './app-sidebar'
 import { ConversationHeader } from './conversation-header'
+import SearchList from './search-list'
 
 const conversations: ConversationRecord[] = [
   { id: 'c1', title: 'First project', createdAt: '2026-08-29T00:00:00.000Z', updatedAt: '2026-08-29T00:00:00.000Z', lastPreview: 'Build a window', workspacePath: '/tmp/first' },
@@ -40,6 +41,7 @@ describe('application shell', () => {
     expect(onNewChat).toHaveBeenCalled()
     await user.click(screen.getByRole('button', { name: /^Second idea\./ }))
     expect(onSelect).toHaveBeenCalledWith('c2')
+    await user.click(screen.getByRole('button', { name: 'Clear search' }))
     await user.type(screen.getByRole('searchbox', { name: 'Search chats' }), 'avatar')
     expect(screen.queryByText('First project')).not.toBeInTheDocument()
     expect(screen.getByText('Second idea')).toBeInTheDocument()
@@ -61,5 +63,16 @@ describe('application shell', () => {
     expect(screen.getByText('Offline')).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Choose workspace' }))
     expect(onChooseWorkspace).toHaveBeenCalled()
+  })
+
+  it('renders the supplied command search with clear and empty states', async () => {
+    const user = userEvent.setup()
+    render(<SearchList items={['Forecast summer demand', 'Audit sugar costs']} labels={{ placeholder: 'Search chats', ariaLabel: 'Search chats', emptyTitle: 'No chats found', emptyHint: 'Try another chat' }} />)
+    const search = screen.getByRole('searchbox', { name: 'Search chats' })
+    expect(screen.getByRole('button', { name: 'Forecast summer demand' })).toBeInTheDocument()
+    await user.type(search, 'zzz')
+    expect(screen.getByText('No chats found')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Clear search' }))
+    expect(search).toHaveValue('')
   })
 })

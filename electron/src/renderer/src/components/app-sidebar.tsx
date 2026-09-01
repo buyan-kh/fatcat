@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { useState, type ReactNode } from 'react'
 import { Archive } from '@phosphor-icons/react/Archive'
 import { CaretDown } from '@phosphor-icons/react/CaretDown'
 import { GearSix } from '@phosphor-icons/react/GearSix'
@@ -7,11 +7,11 @@ import { MagnifyingGlass } from '@phosphor-icons/react/MagnifyingGlass'
 import { PencilSimple } from '@phosphor-icons/react/PencilSimple'
 import { SidebarSimple } from '@phosphor-icons/react/SidebarSimple'
 import { UserPlus } from '@phosphor-icons/react/UserPlus'
-import { X } from '@phosphor-icons/react/X'
 import type { ConnectionStatus, ConversationRecord } from '@shared/chat'
 import { Button } from '@renderer/components/ui/button'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@renderer/components/ui/dropdown-menu'
 import { cn } from '@renderer/lib/utils'
+import SearchList from './search-list'
 
 type AppSidebarProps = {
   conversations: ConversationRecord[]
@@ -30,18 +30,7 @@ const SIDEBAR_WIDTH = 224
 const COLLAPSED_WIDTH = 52
 
 export function AppSidebar({ conversations, selectedId, collapsed, connection, onNewChat, onSelect, onRename, onDelete, onToggle, onOpenSettings }: AppSidebarProps) {
-  const [query, setQuery] = useState('')
   const [searchOpen, setSearchOpen] = useState(false)
-  const searchRef = useRef<HTMLInputElement>(null)
-  const visible = useMemo(() => {
-    const normalized = query.trim().toLowerCase()
-    if (!normalized) return conversations
-    return conversations.filter((conversation) => `${conversation.title}\n${conversation.lastPreview}`.toLowerCase().includes(normalized))
-  }, [conversations, query])
-
-  useEffect(() => {
-    if (searchOpen) searchRef.current?.focus()
-  }, [searchOpen])
 
   return (
     <aside
@@ -76,17 +65,16 @@ export function AppSidebar({ conversations, selectedId, collapsed, connection, o
               <CaretDown size={16} /><span>Chats</span>
             </div>
             {!searchOpen && <button type="button" aria-label="Search chats" onClick={() => setSearchOpen(true)} className="absolute right-0 top-0 flex size-8 items-center justify-center rounded-[8px] text-muted-foreground hover:bg-accent hover:text-foreground"><MagnifyingGlass size={16} /></button>}
-            <div className={cn('absolute right-0 top-0 z-10 flex h-8 w-full items-center overflow-hidden rounded-[8px] border border-border/70 bg-background text-muted-foreground shadow-sm transition-opacity', searchOpen ? 'opacity-100' : 'pointer-events-none opacity-0')}>
-              <MagnifyingGlass className="ml-2 shrink-0" size={15} />
-              <input ref={searchRef} type="search" value={query} onChange={(event) => setQuery(event.target.value)} onKeyDown={(event) => { if (event.key === 'Escape') { setSearchOpen(false); setQuery('') } }} placeholder="Search chats" aria-label="Search chats" className="nav-control ml-1.5 min-w-0 flex-1 bg-transparent px-1 text-[13px] font-medium text-foreground outline-none placeholder:text-muted-foreground" />
-              <button type="button" aria-label="Close chat search" onClick={() => { setSearchOpen(false); setQuery('') }} className="flex size-8 shrink-0 items-center justify-center rounded-[8px] text-muted-foreground hover:bg-accent hover:text-foreground"><X size={16} /></button>
-            </div>
           </div>
 
-          <div className="group/sidebar flex flex-col gap-px">
-            {visible.map((conversation) => <RecentRow key={conversation.id} conversation={conversation} active={conversation.id === selectedId} onSelect={onSelect} onRename={onRename} onDelete={onDelete} />)}
-            {query && visible.length === 0 && <div className="mx-2 px-2 py-2 text-[12.5px] text-muted-foreground">No chats found</div>}
-          </div>
+          {searchOpen ? <SearchList
+            className="min-h-0 max-w-none"
+            items={conversations.map((conversation) => conversation.title)}
+            labels={{ placeholder: 'Search chats', ariaLabel: 'Search chats', emptyTitle: 'No chats found', emptyHint: 'Adjust your search to try again' }}
+            matches={(item, value, index) => `${conversations[index]?.title ?? item}\n${conversations[index]?.lastPreview ?? ''}`.toLowerCase().includes(value.toLowerCase())}
+            itemAriaLabel={(item, index) => `${item}. ${conversations[index]?.lastPreview ?? ''}`}
+            onPick={(_item, index) => { const conversation = conversations[index]; if (conversation) onSelect(conversation.id) }}
+          /> : <div className="group/sidebar flex flex-col gap-px">{conversations.map((conversation) => <RecentRow key={conversation.id} conversation={conversation} active={conversation.id === selectedId} onSelect={onSelect} onRename={onRename} onDelete={onDelete} />)}</div>}
         </div>}
 
         <div className={cn('mx-2 mt-3 border-t border-border/70 pt-3', collapsed && 'border-transparent')}>
