@@ -108,6 +108,8 @@ function registerIpc(fatcat: FatCatService): void {
   ipcMain.handle(FATCAT_INVOKE_CHANNELS.deleteConversation, (_event, id: string) => fatcat.deleteConversation(id))
   ipcMain.handle(FATCAT_INVOKE_CHANNELS.sendMessage, (_event, text: string) => fatcat.sendMessage(text))
   ipcMain.handle(FATCAT_INVOKE_CHANNELS.cancelTurn, () => fatcat.cancelTurn())
+  ipcMain.handle(FATCAT_INVOKE_CHANNELS.approveAction, (_event, proposalId: string) => fatcat.approveAction(proposalId))
+  ipcMain.handle(FATCAT_INVOKE_CHANNELS.denyAction, (_event, proposalId: string) => fatcat.denyAction(proposalId))
   ipcMain.handle(FATCAT_INVOKE_CHANNELS.retryLastTurn, () => fatcat.retryLastTurn())
   ipcMain.handle(FATCAT_INVOKE_CHANNELS.chooseWorkspace, () => fatcat.chooseWorkspace())
   ipcMain.handle(FATCAT_INVOKE_CHANNELS.setAppearance, async (_event, appearance: AppearancePreference) => {

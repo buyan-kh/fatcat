@@ -31,6 +31,8 @@ export type FatCatAPI = {
   deleteConversation(id: string): Promise<void>
   sendMessage(text: string): Promise<void>
   cancelTurn(): Promise<void>
+  approveAction(proposalId: string): Promise<void>
+  denyAction(proposalId: string): Promise<void>
   retryLastTurn(): Promise<void>
   chooseWorkspace(): Promise<string | null>
   setAppearance(appearance: AppearancePreference): Promise<void>
@@ -49,6 +51,8 @@ export const FATCAT_INVOKE_CHANNELS = {
   deleteConversation: 'fatcat:delete-conversation',
   sendMessage: 'fatcat:send-message',
   cancelTurn: 'fatcat:cancel-turn',
+  approveAction: 'fatcat:approve-action',
+  denyAction: 'fatcat:deny-action',
   retryLastTurn: 'fatcat:retry-last-turn',
   chooseWorkspace: 'fatcat:choose-workspace',
   setAppearance: 'fatcat:set-appearance',

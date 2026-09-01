@@ -102,7 +102,7 @@ describe('FatCatService', () => {
       version: 1,
       type: 'conversation_snapshot',
       selected_id: 'c1',
-      records: [{ id: 'c1', title: 'Shared', workspace_path: '/tmp', session_id: 's1', messages: [] }],
+      records: [{ id: 'c1', title: 'Shared', workspace_path: '/tmp', session_id: 's1' }],
     })
     await vi.waitFor(async () => expect((await service.snapshot()).selectedId).toBe('c1'))
 
@@ -131,7 +131,7 @@ describe('FatCatService', () => {
       version: 1,
       type: 'conversation_snapshot',
       selected_id: 'electron-chat',
-      records: [{ id: 'electron-chat', title: 'Electron chat', workspace_path: '/tmp', session_id: 'electron-session', messages: [{ id: 'e1', role: 'assistant', text: 'Electron history' }] }],
+      records: [{ id: 'electron-chat', title: 'Electron chat', workspace_path: '/tmp', session_id: 'electron-session' }],
     })
     await vi.waitFor(async () => expect((await service.snapshot()).selectedId).toBe('electron-chat'))
 
@@ -140,11 +140,12 @@ describe('FatCatService', () => {
       type: 'conversation_snapshot',
       selected_id: 'native-chat',
       records: [
-        { id: 'electron-chat', title: 'Electron chat', workspace_path: '/tmp', session_id: 'electron-session', messages: [{ id: 'e1', role: 'assistant', text: 'Electron history' }] },
-        { id: 'native-chat', title: 'Native chat', workspace_path: '/tmp', session_id: 'native-session', messages: [{ id: 'n1', role: 'assistant', text: 'Native history' }] },
+        { id: 'electron-chat', title: 'Electron chat', workspace_path: '/tmp', session_id: 'electron-session' },
+        { id: 'native-chat', title: 'Native chat', workspace_path: '/tmp', session_id: 'native-session' },
       ],
     })
 
+    transport.event({ version: 1, type: 'session_history', conversation_id: 'electron-chat', session_id: 'electron-session', role: 'assistant', text: 'Electron history' })
     await vi.waitFor(async () => {
       const snapshot = await service.snapshot()
       expect(snapshot.selectedId).toBe('electron-chat')

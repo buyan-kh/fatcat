@@ -34,6 +34,7 @@ export class FatCatService extends EventEmitter {
   private retryPrompt: string | null = null
   private resumeError: string | null = null
   private providers: ProviderSummary[] = []
+  private seenHermesEventIds = new Set<string>()
   private appearance: AppearancePreference
   private eventChain: Promise<void> = Promise.resolve()
 
@@ -147,6 +148,14 @@ export class FatCatService extends EventEmitter {
     await this.emitSnapshot()
   }
 
+  approveAction(proposalId: string): void {
+    this.transport.send({ version: 1, type: 'approve_action', request_id: randomUUID(), proposal_id: proposalId })
+  }
+
+  denyAction(proposalId: string): void {
+    this.transport.send({ version: 1, type: 'deny_action', request_id: randomUUID(), proposal_id: proposalId })
+  }
+
   async retryLastTurn(): Promise<void> {
     if (!this.retryPrompt) throw new Error('There is no prompt to retry')
     await this.sendMessage(this.retryPrompt)
@@ -195,6 +204,13 @@ export class FatCatService extends EventEmitter {
 
   private async handleAgentEvent(event: AgentEvent): Promise<void> {
     if ('request_id' in event && event.request_id && this.ignoredRequestIds.has(event.request_id)) return
+    if ('kind' in event) {
+      if (this.seenHermesEventIds.has(event.event_id)) return
+      this.seenHermesEventIds.add(event.event_id)
+      await this.handleHermesEvent(event)
+      await this.emitSnapshot()
+      return
+    }
     if (event.type === 'conversation_snapshot') {
       const now = new Date().toISOString()
       const current = await this.options.repository.snapshot()
@@ -204,7 +220,7 @@ export class FatCatService extends EventEmitter {
         title: record.title,
         createdAt: now,
         updatedAt: now,
-        lastPreview: record.messages.at(-1)?.text ?? '',
+        lastPreview: '',
         workspacePath: record.workspace_path,
       }))
       const localSelected = this.selectedConversationId
@@ -222,9 +238,6 @@ export class FatCatService extends EventEmitter {
         records,
       })
       const selected = event.records.find((record) => record.id === selectedId)
-      if (!this.activeRequestId && selected) {
-        this.messages = selected.messages.map((item) => message(item.role, item.text, undefined, item.id))
-      }
       await this.emitSnapshot()
       return
     }
@@ -326,6 +339,64 @@ export class FatCatService extends EventEmitter {
         break
     }
     await this.emitSnapshot()
+  }
+
+  private async handleHermesEvent(event: Extract<AgentEvent, { version: 2 }>): Promise<void> {
+    const document = await this.options.repository.snapshot()
+    const selectedId = this.selectedConversationId ?? document.selectedId
+    const selected = document.records.find((record) => record.id === selectedId)
+    if (!selected?.hermesSessionId || selected.hermesSessionId !== event.session_id) return
+    const requestId = event.request_id ?? this.activeRequestId
+    const details = event.details
+    const text = typeof details.text === 'string' ? details.text : event.summary
+
+    if (event.kind === 'message.delta') {
+      if (!requestId) return
+      this.activeRequestId ??= requestId
+      const assistant = this.ensureAssistant(requestId)
+      assistant.text += text
+      assistant.isStreaming = true
+      return
+    }
+    if (event.kind === 'message.completed') {
+      if (requestId) {
+        const assistant = this.ensureAssistant(requestId)
+        assistant.isStreaming = false
+        this.activeRequestId = null
+      }
+      return
+    }
+    if (event.kind === 'session.state') {
+      if (!requestId) return
+      this.activeRequestId ??= requestId
+      this.applyTurnState(requestId, typeof details.state === 'string' ? details.state : event.summary.toLowerCase())
+      if (details.state === 'completed' || details.state === 'failed') this.activeRequestId = null
+      return
+    }
+    if (event.kind === 'memory.updated') {
+      this.emit('event', { type: 'notice', level: 'info', message: event.summary } satisfies FatCatEvent)
+      return
+    }
+    if (!requestId) return
+    const assistant = this.ensureAssistant(requestId)
+    const activityID = event.event_id
+    const toolID = event.request_id ?? activityID
+    let activity = assistant.activities.find((candidate) => candidate.id === toolID || candidate.id === activityID)
+    const rawTool = details.tool
+    const tool = typeof rawTool === 'string' ? rawTool : event.summary
+    const status = event.kind === 'tool.needs_approval' || event.kind === 'native_action.approval_requested'
+      ? 'working'
+      : event.kind.endsWith('.failed') ? 'failed' : event.kind.endsWith('.completed') || event.kind === 'verification.completed' ? 'completed' : 'working'
+    if (!activity) {
+      activity = { id: toolID, requestId, kind: 'tool', label: tool, status }
+      assistant.activities.push(activity)
+    } else {
+      activity.label = tool
+      activity.status = status
+    }
+    activity.detail = event.summary
+    activity.arguments = Object.fromEntries(Object.entries(details).map(([key, value]) => [key, Array.isArray(value) ? value.join(', ') : String(value)]))
+    assistant.isStreaming = status !== 'completed' && status !== 'failed'
   }
 
   private ensureAssistant(requestId: string): ChatMessage {
