@@ -24,7 +24,7 @@ export function PromptBar({ workspacePath, isGenerating, disabled, onSend, onSto
   }
   return (
     <div className="mx-auto w-full max-w-3xl px-5 pb-5">
-      <div className="rounded-xl border bg-card shadow-[0_8px_30px_color-mix(in_oklab,var(--foreground)_8%,transparent)] focus-within:ring-2 focus-within:ring-ring/35">
+      <div className="surface-card rounded-[10px] focus-within:ring-2 focus-within:ring-ring/35">
         <Textarea
           aria-label="Message FatCat"
           placeholder={disabled ? 'Connect Hermes to continue' : 'Ask FatCat anything…'}
@@ -40,7 +40,7 @@ export function PromptBar({ workspacePath, isGenerating, disabled, onSend, onSto
           className="min-h-12 max-h-40 resize-none border-0 bg-transparent px-3.5 pt-3 text-sm shadow-none focus-visible:ring-0 dark:bg-transparent"
         />
         <div className="flex items-center gap-2 px-2.5 pb-2.5">
-          <Button variant="ghost" size="sm" className="min-w-0 max-w-[60%] justify-start gap-1.5 px-2 text-xs text-muted-foreground" aria-label="Choose workspace" title={workspacePath} onClick={onChooseWorkspace}>
+          <Button variant="ghost" size="sm" className="nav-control min-w-0 max-w-[60%] justify-start gap-1.5 px-2 text-xs text-muted-foreground" aria-label="Choose workspace" title={workspacePath} onClick={onChooseWorkspace}>
             <FolderOpen className="size-3.5 shrink-0" /><span className="truncate">{workspacePath || 'Choose workspace'}</span>
           </Button>
           <span className="ml-auto hidden text-[10px] text-muted-foreground sm:block">Return to send · Shift-Return for newline</span>

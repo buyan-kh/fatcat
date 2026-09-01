@@ -23,7 +23,7 @@
   --border: oklch(0.9 0 0);
   --input: oklch(0.9 0 0);
   --ring: oklch(0.55 0.2 255);
-  --radius: 0.625rem;
+  --radius: 10px;
 }
 
 .dark {
@@ -84,9 +84,26 @@ body {
   color: var(--foreground);
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   -webkit-font-smoothing: antialiased;
+  letter-spacing: 0.01em;
 }
 
 button, input, textarea { font: inherit; }
+
+/* Shared visual primitives for the Electron workspace. */
+.hairline { border-width: 0.5px; }
+.surface-card {
+  border: 0.5px solid var(--border);
+  background: color-mix(in oklab, var(--card) 96%, var(--foreground) 4%);
+  box-shadow: 0 1px 2px color-mix(in oklab, var(--foreground) 6%, transparent),
+    0 8px 24px color-mix(in oklab, var(--foreground) 4%, transparent);
+}
+.section-caption {
+  color: var(--muted-foreground);
+  font-size: 0.75rem;
+  font-weight: 500;
+  line-height: 1rem;
+}
+.nav-control { height: 36px; border-radius: 10px; }
 
 .app-drag { -webkit-app-region: drag; }
 .app-no-drag, .app-drag button, .app-drag input { -webkit-app-region: no-drag; }
