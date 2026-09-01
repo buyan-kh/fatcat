@@ -121,6 +121,46 @@ struct FatCatChatStateTests {
         #expect(FatCatSessionResolution.failedResume(for: store.records[0]) == .showFailure(sessionID: "saved-session"))
     }
 
+    @Test func conversationSelectionKeepsAValidLocalChoice() {
+        let selected = FatCatConversationSelection.resolve(
+            localID: "native-chat",
+            sharedID: "electron-chat",
+            availableIDs: ["electron-chat", "native-chat"]
+        )
+
+        #expect(selected == "native-chat")
+    }
+
+    @Test func conversationSelectionFallsBackToAValidSharedChoice() {
+        let selected = FatCatConversationSelection.resolve(
+            localID: "deleted-chat",
+            sharedID: "electron-chat",
+            availableIDs: ["electron-chat", "other-chat"]
+        )
+
+        #expect(selected == "electron-chat")
+    }
+
+    @Test func conversationSelectionUsesFirstRecordWhenBothChoicesAreInvalid() {
+        let selected = FatCatConversationSelection.resolve(
+            localID: "deleted-chat",
+            sharedID: "missing-chat",
+            availableIDs: ["first-chat", "second-chat"]
+        )
+
+        #expect(selected == "first-chat")
+    }
+
+    @Test func conversationSelectionClearsForAnEmptySnapshot() {
+        let selected = FatCatConversationSelection.resolve(
+            localID: "native-chat",
+            sharedID: "electron-chat",
+            availableIDs: []
+        )
+
+        #expect(selected == nil)
+    }
+
     @Test func sharedSnapshotReplacesTheLocalConversationCache() throws {
         let url = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString).appendingPathExtension("json")
         defer { try? FileManager.default.removeItem(at: url) }

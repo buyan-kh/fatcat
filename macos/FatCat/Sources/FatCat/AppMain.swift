@@ -2132,16 +2132,25 @@ final class PetWindowController: NSObject, NSWindowDelegate {
                     workspacePath: record.workspacePath
                 )
             }
-            try? conversationStore.replace(records: mapped, selectedID: selectedID)
+            let effectiveSelectedID = FatCatConversationSelection.resolve(
+                localID: model.selectedConversationID,
+                sharedID: selectedID,
+                availableIDs: records.map(\.id)
+            )
+            try? conversationStore.replace(records: mapped, selectedID: effectiveSelectedID)
             model.conversations = mapped
-            model.selectedConversationID = selectedID
-            guard let selected = records.first(where: { $0.id == selectedID }) else {
+            model.selectedConversationID = effectiveSelectedID
+            guard let selected = records.first(where: { $0.id == effectiveSelectedID }) else {
                 activeSessionID = nil
                 model.replaceMessages([])
                 return
             }
             model.replaceMessages([])
-            if let sessionID = selected.sessionID, activeSessionID != sessionID {
+            guard let sessionID = selected.sessionID, !sessionID.isEmpty else {
+                activeSessionID = nil
+                return
+            }
+            if activeSessionID != sessionID {
                 activeSessionID = sessionID
                 agent.loadSession(conversationID: selected.id, sessionID: sessionID, cwd: selected.workspacePath)
             }
