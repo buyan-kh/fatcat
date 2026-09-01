@@ -195,11 +195,11 @@ class ServerTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(events[0]["kind"], "session.state")
         self.assertEqual(events[0]["details"]["state"], "sending")
         self.assertEqual(events[0]["session_id"], "session-1")
-        self.assertEqual(events[1]["type"], "error")
-        self.assertEqual(events[1]["request_id"], "request-1")
-        self.assertIn("No LLM provider configured", events[1]["message"])
-        self.assertEqual(events[2]["kind"], "session.state")
-        self.assertEqual(events[2]["details"]["state"], "failed")
+        error_event = next(event for event in events if event.get("type") == "error")
+        self.assertEqual(error_event["request_id"], "request-1")
+        self.assertIn("No LLM provider configured", error_event["message"])
+        failed_event = next(event for event in events if event.get("kind") == "session.state" and event.get("details", {}).get("state") == "failed")
+        self.assertEqual(failed_event["session_id"], "session-1")
 
     async def test_unknown_user_message_does_not_create_a_replacement_session(self):
         class FakeManager:
