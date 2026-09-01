@@ -110,6 +110,8 @@ struct FatCatAvatarContractTests {
     @Test func electronWorkspaceUsesOneLauncherForAvatarAndMenu() throws {
         let appMain = try loadText("macos/FatCat/Sources/FatCat/AppMain.swift")
         let launcher = try loadText("macos/FatCat/Sources/FatCatCore/FatCatElectronLauncher.swift")
+        let runScript = try loadText("scripts/run-fatcat-macos.sh")
+        let dmgScript = try loadText("scripts/package-fatcat-dmg.sh")
 
         #expect(appMain.contains("FATCAT_ELECTRON_APP_PATH"))
         #expect(launcher.contains("FatCat Electron.app"))
@@ -119,6 +121,8 @@ struct FatCatAvatarContractTests {
         #expect(appMain.contains("private let electronLauncher = FatCatElectronWorkspaceLauncher()"))
         #expect(!appMain.contains("/Users/"))
         #expect(!appMain.contains("pkill"))
+        #expect(runScript.contains("package-fatcat-electron.sh"))
+        #expect(dmgScript.contains("FatCat Electron.app"))
     }
 
     private func loadJSON(_ relativePath: String) throws -> [String: Any] {

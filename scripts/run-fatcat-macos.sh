@@ -8,6 +8,7 @@ APP_BUNDLE="$NATIVE_ROOT/.build/FatCat.app"
 npm --prefix "$REPO_ROOT" run build:avatar
 swift build --configuration release --package-path "$NATIVE_ROOT"
 BIN_DIR="$(swift build --configuration release --package-path "$NATIVE_ROOT" --show-bin-path)"
+"$SCRIPT_DIR/package-fatcat-electron.sh"
 
 running_app_pattern="$APP_BUNDLE/Contents/MacOS/FatCat"
 running_agent_pattern="$APP_BUNDLE/Contents/Resources/FatCatAgent/runtime/bin/python3 -m fatcat_agent.server"
