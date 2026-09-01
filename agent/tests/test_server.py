@@ -414,6 +414,67 @@ class ServerTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(acp_agent.calls, [("hello", "session-1")])
 
+    async def test_legacy_stream_emits_each_chunk_before_completion(self):
+        release = threading.Event()
+        events = []
+
+        class StreamingAgent:
+            def run_conversation(self, *args, **kwargs):
+                self.stream_delta_callback("first ")
+                release.wait(1)
+                self.stream_delta_callback("second")
+                return {"messages": [], "final_response": "first second"}
+
+        async def emit(event):
+            events.append((event.get("kind"), event.get("details", {}).get("text")))
+
+        state = SimpleNamespace(agent=StreamingAgent(), history=[], cancel_event=threading.Event())
+        session = FatCatAgentSession("session-1", ".", emit, asyncio.get_running_loop(), state)
+        prompt_task = asyncio.create_task(session.prompt("request-1", "hello"))
+        await asyncio.sleep(0.02)
+        self.assertEqual([text for kind, text in events if kind == "message.delta"], ["first "])
+        self.assertNotIn(("message.completed", None), events)
+        release.set()
+        await prompt_task
+
+        self.assertEqual([text for kind, text in events if kind == "message.delta"], ["first ", "second"])
+        self.assertIn(("message.started", None), events)
+        self.assertIn(("message.completed", None), events)
+        self.assertEqual(events[-1][0], "session.state")
+
+    async def test_acp_stream_emits_each_chunk_before_completion(self):
+        release = asyncio.Event()
+        events = []
+
+        async def emit(event):
+            events.append((event.get("kind"), event.get("details", {}).get("text")))
+
+        server = FatCatAgentServer(Path("/tmp/fatcat-test.sock"), Path("/tmp/fatcat-test-home"))
+        bridge = _FatCatACPBridge(server)
+
+        class StreamingACP:
+            async def prompt(self, **_kwargs):
+                update = SimpleNamespace(session_update="agent_message_chunk", content=SimpleNamespace(text="first "))
+                await bridge.session_update("session-1", update)
+                await release.wait()
+                update = SimpleNamespace(session_update="agent_message_chunk", content=SimpleNamespace(text="second"))
+                await bridge.session_update("session-1", update)
+                return SimpleNamespace(stop_reason="end_turn")
+
+        state = SimpleNamespace(agent=SimpleNamespace(), history=[], cancel_event=threading.Event())
+        session = FatCatAgentSession(
+            "session-1", ".", emit, asyncio.get_running_loop(), state, acp_agent=StreamingACP()
+        )
+        server.sessions["session-1"] = session
+        prompt_task = asyncio.create_task(session.prompt("request-1", "hello"))
+        await asyncio.sleep(0.02)
+        self.assertEqual([text for kind, text in events if kind == "message.delta"], ["first "])
+        release.set()
+        await prompt_task
+
+        self.assertEqual([text for kind, text in events if kind == "message.delta"], ["first ", "second"])
+        self.assertIn(("message.completed", None), events)
+
     async def test_permission_request_waits_for_explicit_fatcat_decision(self):
         events = []
 
