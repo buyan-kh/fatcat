@@ -4,6 +4,9 @@ import Testing
 struct FatCatProviderSetupTests {
     @Test func unavailableValidationPreservesExplicitDefault() {
         var state = FatCatProviderSetupState(defaultProvider: "openai-codex", defaultModel: "gpt-5")
+        state.applyInventory([
+            ["slug": "openai-codex", "name": "OpenAI Codex", "status": "connected", "detail": "Logged in"]
+        ])
         state.applyValidation(FatCatProviderValidation(providerID: "openai-codex", model: "gpt-5", usable: false, detail: "Credential expired"))
 
         #expect(state.defaultProvider == "openai-codex")

@@ -11,14 +11,14 @@ struct ProviderDiscoveryTests {
     @Test func discoveryReportsPresenceWithoutCopyingCredentials() async throws {
         let discovery = ProviderDiscovery(check: { provider in
             ProviderCheckResult(
-                installed: provider.id == "codex",
-                authenticated: provider.id == "codex",
+                installed: provider.id == "openai-codex",
+                authenticated: provider.id == "openai-codex",
                 detail: "Authenticated CLI"
             )
         })
 
         let results = await discovery.scan()
-        let codex = try #require(results.first(where: { $0.id == "codex" }))
+        let codex = try #require(results.first(where: { $0.id == "openai-codex" }))
 
         #expect(codex.authenticated)
         #expect(codex.detail == "Authenticated CLI")
