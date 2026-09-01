@@ -1,4 +1,4 @@
-import bundledDefinition from '../../public/strobi.avatar.json'
+import bundledDefinition from '../../public/fatcat.avatar.json'
 import type { AvatarDefinition } from '@bible-strong/avatar-core'
 import { describe, expect, it } from 'vitest'
 import { normalizeImportedDefinition, summarizeDefinition } from './avatar-data'

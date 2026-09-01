@@ -1,0 +1,50 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+NATIVE_ROOT="$REPO_ROOT/macos/FatCat"
+APP_BUNDLE="${1:-$NATIVE_ROOT/.build/FatCat.app}"
+CONTENTS="$APP_BUNDLE/Contents"
+INFO_PLIST="$CONTENTS/Info.plist"
+EXECUTABLE="$CONTENTS/MacOS/FatCat"
+RESOURCE_BUNDLE="$CONTENTS/Resources/FatCat_FatCat.bundle"
+AGENT_ROOT="$CONTENTS/Resources/FatCatAgent"
+
+fail() { echo "Packaging verification failed: $1" >&2; exit 1; }
+
+[[ "$(basename "$APP_BUNDLE")" == "FatCat.app" ]] || fail "app must be named FatCat.app"
+[[ -d "$APP_BUNDLE" ]] || fail "missing app bundle: $APP_BUNDLE"
+[[ -f "$INFO_PLIST" ]] || fail "missing Info.plist"
+[[ -x "$EXECUTABLE" ]] || fail "missing executable"
+[[ -d "$RESOURCE_BUNDLE" ]] || fail "missing SwiftPM resource bundle"
+[[ -f "$RESOURCE_BUNDLE/fatcat.avatar.json" ]] || fail "missing avatar definition"
+[[ -f "$RESOURCE_BUNDLE/FatCatAvatar/avatar.html" ]] || fail "missing bundled avatar surface"
+[[ -d "$RESOURCE_BUNDLE/FatCatAvatar/assets" ]] || fail "missing bundled avatar assets"
+[[ -x "$AGENT_ROOT/FatCatAgent" ]] || fail "missing bundled FatCatAgent launcher"
+[[ -x "$AGENT_ROOT/runtime/bin/python3" ]] || fail "missing bundled Python runtime"
+[[ -f "$CONTENTS/Resources/protocol-schemas/fatcat-events.schema.json" ]] || fail "missing protocol schema"
+[[ -f "$CONTENTS/Resources/default-skills/README.md" ]] || fail "missing default skills"
+[[ -f "$AGENT_ROOT/FATCAT_HERMES_COMMIT" ]] || fail "missing pinned Hermes commit"
+[[ "$(<"$AGENT_ROOT/FATCAT_HERMES_COMMIT")" == "533886c8b8eb67ff8b389b7f48e7d5e5d9c575b9" ]] || fail "unexpected Hermes commit"
+[[ -f "$AGENT_ROOT/LICENSE" ]] || fail "missing Hermes MIT license"
+[[ ! -d "$AGENT_ROOT/.git" ]] || fail "Hermes git metadata leaked into app bundle"
+[[ ! -d "$AGENT_ROOT/node_modules" ]] || fail "Hermes node_modules leaked into app bundle"
+[[ ! -d "$AGENT_ROOT/apps" ]] || fail "unused Hermes apps leaked into app bundle"
+[[ ! -f "$AGENT_ROOT/.env" ]] || fail "Hermes environment file leaked into app bundle"
+[[ ! -f "$AGENT_ROOT/auth.json" ]] || fail "Hermes auth file leaked into app bundle"
+[[ -z "$(find "$AGENT_ROOT" -type f -name '*.pyc' -print -quit)" ]] || fail "generated Python bytecode leaked into app bundle"
+for developer_path in "$HOME/.hermes" "$HOME/.codex"; do
+  matches="$(find "$AGENT_ROOT" -type f ! -name '*.pyc' -print0 | xargs -0 rg -l --fixed-strings -- "$developer_path" || true)"
+  [[ -z "$matches" ]] || fail "developer path leaked into app bundle: $developer_path"
+done
+[[ ! -d "$RESOURCE_BUNDLE/WebApp" ]] || fail "browser dashboard leaked into app bundle"
+
+bundle_identifier="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$INFO_PLIST" 2>/dev/null)" || fail "missing bundle identifier"
+[[ "$bundle_identifier" == "com.buyan.fatcat" ]] || fail "unexpected bundle identifier"
+display_name="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleDisplayName' "$INFO_PLIST" 2>/dev/null)" || fail "missing display name"
+[[ "$display_name" == "FatCat" ]] || fail "unexpected display name"
+
+codesign --verify --deep --strict --verbose=2 "$APP_BUNDLE" >/dev/null 2>&1 || fail "code signature verification failed"
+"$EXECUTABLE" --verify-native-bundle >/dev/null || fail "native bundle resource check failed"
+echo "Packaging verified: $APP_BUNDLE"

@@ -4,7 +4,7 @@
 
 **Goal:** Build a separate, solid Electron desktop client with a Codex-inspired React interface that owns a real Hermes agent process and supports persistent, streaming FatCat conversations.
 
-**Architecture:** Electron's main process supervises the existing Python `PeppaAgent`, speaks the versioned newline-delimited JSON protocol over a private Unix socket, and exposes a validated, context-isolated preload API. The React renderer depends only on that typed API, keeps deterministic chat state in a reducer, and composes shadcn primitives with adapted Beautiful UI chat, prompt, thinking, and tool-row patterns.
+**Architecture:** Electron's main process supervises the existing Python `FatCatAgent`, speaks the versioned newline-delimited JSON protocol over a private Unix socket, and exposes a validated, context-isolated preload API. The React renderer depends only on that typed API, keeps deterministic chat state in a reducer, and composes shadcn primitives with adapted Beautiful UI chat, prompt, thinking, and tool-row patterns.
 
 **Tech Stack:** Electron, electron-vite, React 19, TypeScript, Tailwind CSS 4, shadcn/ui primitives, Radix UI, Phosphor Icons, Vitest, Testing Library, Zod, Node Unix sockets.
 
@@ -25,7 +25,7 @@ electron/
   index.html                           # renderer entry document
   src/main/index.ts                    # app lifecycle and BrowserWindow creation
   src/main/window-state.ts             # validated bounds persistence
-  src/main/agent/agent-supervisor.ts    # PeppaAgent child lifecycle
+  src/main/agent/agent-supervisor.ts    # FatCatAgent child lifecycle
   src/main/agent/socket-transport.ts    # Unix socket framing and handshake
   src/main/agent/fatcat-service.ts      # conversation/session orchestration
   src/main/persistence/conversations.ts # atomic local conversation metadata
@@ -233,7 +233,7 @@ git add electron/src/main/persistence electron/src/main/window-state*
 git commit -m "feat: persist Electron conversations and bounds"
 ```
 
-### Task 4: Supervise PeppaAgent and implement the socket transport
+### Task 4: Supervise FatCatAgent and implement the socket transport
 
 **Files:**
 - Create: `electron/src/main/agent/socket-transport.ts`
@@ -258,7 +258,7 @@ The transport wraps `node:net.Socket`, buffers UTF-8 input until newline, valida
 
 - [ ] **Step 4: Implement `AgentSupervisor`**
 
-Resolve `FATCAT_AGENT_PATH` first. In repository development, fall back to `agent/peppa_agent/PeppaAgent` only when it is executable; otherwise report an actionable missing-runtime error. Spawn with `--socket` and `--hermes-home`, use a unique socket below Electron `userData`, inherit the current environment, and keep stdout/stderr in a bounded redacted diagnostic ring buffer.
+Resolve `FATCAT_AGENT_PATH` first. In repository development, fall back to `agent/fatcat_agent/FatCatAgent` only when it is executable; otherwise report an actionable missing-runtime error. Spawn with `--socket` and `--hermes-home`, use a unique socket below Electron `userData`, inherit the current environment, and keep stdout/stderr in a bounded redacted diagnostic ring buffer.
 
 Expose:
 
@@ -531,7 +531,7 @@ npm --prefix electron run typecheck
 npm --prefix electron run build
 npm test
 npm run build
-swift test --package-path macos/PeppaAnywhere
+swift test --package-path macos/FatCat
 PYTHONPATH=agent python3 -m unittest discover -s agent/tests
 bash scripts/test-hermes-bundle.sh
 ```

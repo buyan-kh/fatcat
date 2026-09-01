@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import type { AvatarDefinition } from '@bible-strong/avatar-core'
-import bundledDefinition from '../public/strobi.avatar.json'
-import { PeppaCompanionAvatar } from './components/PeppaCompanionAvatar'
+import bundledDefinition from '../public/fatcat.avatar.json'
+import { FatCatAvatar } from './components/FatCatAvatar'
 import { petStates, type PetState } from './lib/pet-surface'
 
 type NativeBridge = {
@@ -11,7 +11,7 @@ type NativeBridge = {
 
 function nativeBridge(): NativeBridge | undefined {
   if (typeof window === 'undefined') return undefined
-  return (window as Window & { __PEPPA_NATIVE__?: NativeBridge }).__PEPPA_NATIVE__
+  return (window as Window & { __FATCAT_NATIVE__?: NativeBridge }).__FATCAT_NATIVE__
 }
 
 export function App() {
@@ -22,8 +22,8 @@ export function App() {
       const next = (event as CustomEvent<{ state?: string }>).detail?.state
       if (next && petStates.includes(next as PetState)) setState(next as PetState)
     }
-    window.addEventListener('peppa:state', receiveState)
-    return () => window.removeEventListener('peppa:state', receiveState)
+    window.addEventListener('fatcat:state', receiveState)
+    return () => window.removeEventListener('fatcat:state', receiveState)
   }, [])
 
   const emit = (type: string) => nativeBridge()?.petEvent?.(type)
@@ -38,7 +38,7 @@ export function App() {
       }}
       aria-label="FatCat desktop pet"
     >
-      <PeppaCompanionAvatar
+      <FatCatAvatar
         definition={bundledDefinition as Readonly<AvatarDefinition>}
         state={state}
       />

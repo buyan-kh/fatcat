@@ -26,9 +26,9 @@
 
 **Files:**
 - Modify: `package.json`, `package-lock.json`, `electron/package.json`
-- Rename: `src/components/PeppaCompanionAvatar.tsx` to `src/components/FatCatAvatar.tsx`
-- Rename: `macos/PeppaAnywhere` target/package paths and Swift symbols/files to FatCat names
-- Rename: `agent/peppa_agent` runtime package and executable references
+- Rename: `src/components/FatCatCompanionAvatar.tsx` to `src/components/FatCatAvatar.tsx`
+- Rename: `macos/FatCat` target/package paths and Swift symbols/files to FatCat names
+- Rename: `agent/fatcat_agent` runtime package and executable references
 - Modify: `protocol/*`, scripts, plist, storage service/account names
 
 - [ ] Rename active identifiers and update imports/tests/build scripts.

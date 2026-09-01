@@ -70,7 +70,7 @@ Swift actions   <──typed proposals/results──── FatCatAgent
 Keychain        <──credential resolver──────── FatCatAgent/Hermes transport
 ```
 
-The existing `agent/peppa_agent` layer becomes the product adapter around the
+The existing `agent/fatcat_agent` layer becomes the product adapter around the
 vendored Hermes runtime rather than a second agent implementation. Existing
 ACP/session behavior remains the source of truth for conversation lifecycle.
 

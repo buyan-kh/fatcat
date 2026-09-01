@@ -1,16 +1,16 @@
 #!/usr/bin/env bash
-# Builds and actually executes the PeppaAnywhere swift-testing suite.
+# Builds and actually executes the FatCat swift-testing suite.
 # Plain `swift test` under Command Line Tools compiles the tests but silently
 # skips running them, so this script loads the bundle through a small runner.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
-NATIVE_ROOT="$REPO_ROOT/macos/PeppaAnywhere"
+NATIVE_ROOT="$REPO_ROOT/macos/FatCat"
 FRAMEWORKS="/Library/Developer/CommandLineTools/Library/Developer/Frameworks"
 SWIFT_LIBS="/Library/Developer/CommandLineTools/Library/Developer/usr/lib"
 RUNNER="$NATIVE_ROOT/.build/fatcat-swift-test-runner"
-BUNDLE="$NATIVE_ROOT/.build/debug/PeppaAnywherePackageTests.xctest/Contents/MacOS/PeppaAnywherePackageTests"
+BUNDLE="$NATIVE_ROOT/.build/debug/FatCatPackageTests.xctest/Contents/MacOS/FatCatPackageTests"
 
 swift build --build-tests --package-path "$NATIVE_ROOT"
 

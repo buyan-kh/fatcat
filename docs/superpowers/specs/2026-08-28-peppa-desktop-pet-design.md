@@ -1,8 +1,8 @@
-# Peppa Anywhere Desktop Pet Design
+# FatCat Anywhere Desktop Pet Design
 
 ## Decision
 
-Peppa Anywhere will be a menu-bar companion with a small, transparent, always-on-top pet panel. Launching the app presents only the real Peppa avatar. Clicking Peppa opens a compact native speech bubble attached to her; closing it returns to the pet-only state. A right-click context menu and the menu-bar item expose privacy, pause, settings, memory, action history, and quit without turning the normal experience into a dashboard.
+FatCat Anywhere will be a menu-bar companion with a small, transparent, always-on-top pet panel. Launching the app presents only the real FatCat avatar. Clicking FatCat opens a compact native speech bubble attached to her; closing it returns to the pet-only state. A right-click context menu and the menu-bar item expose privacy, pause, settings, memory, action history, and quit without turning the normal experience into a dashboard.
 
 The existing React dashboard and its large Swift `WindowGroup` are prototype code, not the visible product path. Useful capture/privacy and avatar-state behavior will be retained behind smaller native boundaries.
 
@@ -10,7 +10,7 @@ The existing React dashboard and its large Swift `WindowGroup` are prototype cod
 
 ### Native shell
 
-`PeppaAnywhereApp` owns an `NSApplicationDelegate` and creates:
+`FatCatApp` owns an `NSApplicationDelegate` and creates:
 
 - a borderless, transparent `NSPanel` for the pet and chat bubble;
 - an `NSStatusItem` for privacy/settings controls;
@@ -20,7 +20,7 @@ The pet panel uses `.floating`, `.canJoinAllSpaces`, and `.fullScreenAuxiliary`,
 
 ### Avatar surface
 
-The real `strobI.avatar.json` definition and `@bible-strong/avatar-react` renderer remain the avatar implementation. The renderer is hosted in a transparent, non-navigable `WKWebView` sized only for Peppa. Its HTML, body, root, and canvas backgrounds are transparent. It has no dashboard components, page chrome, status text, or Vite dependency at runtime.
+The real `strobI.avatar.json` definition and `@bible-strong/avatar-react` renderer remain the avatar implementation. The renderer is hosted in a transparent, non-navigable `WKWebView` sized only for FatCat. Its HTML, body, root, and canvas backgrounds are transparent. It has no dashboard components, page chrome, status text, or Vite dependency at runtime.
 
 The native shell owns semantic state (`idle`, `listening`, `understanding`, `planning`, `askingPermission`, `acting`, `verifying`, `celebrating`, `recovering`, `suspicious`, `sleeping`) and maps those states to the real animation keys. Celebration is selected only by an explicit verified-success transition.
 
@@ -36,7 +36,7 @@ ACP is used because the installed Hermes CLI and authoritative Hermes documentat
 
 ### Observation and safety
 
-`CaptureCoordinator` remains the ScreenCaptureKit boundary. It requests Screen Recording permission from the packaged Peppa Anywhere process, emits structured active-app/window metadata, discards pixel buffers, and redacts configured private apps before data leaves the native process. Pause/resume is visible in Peppa’s state and the menu-bar status.
+`CaptureCoordinator` remains the ScreenCaptureKit boundary. It requests Screen Recording permission from the packaged FatCat Anywhere process, emits structured active-app/window metadata, discards pixel buffers, and redacts configured private apps before data leaves the native process. Pause/resume is visible in FatCat’s state and the menu-bar status.
 
 The current phase does not execute computer actions. The risk policy remains explicit: observation may run automatically, medium-risk actions require an approval surface, and high-risk actions stay blocked until an execution-time approval path exists. Verified-success state is unavailable to the UI unless verification reports success.
 
@@ -45,7 +45,7 @@ The current phase does not execute computer actions. The risk policy remains exp
 - Swift unit tests cover pet-state-to-animation mapping, position persistence, panel configuration, context-menu commands, Hermes JSON-RPC decoding, and no-celebration-before-verification.
 - TypeScript tests cover the avatar-only web surface, transparent document styles, real animation-key usage, and absence of `CompanionDashboard` from the normal entrypoint.
 - `npm test`, `npm run lint`, `npm run build`, `swift test`, and `swift build` run before packaging.
-- The packaging script creates `Peppa Anywhere.app` with bundle identifier `com.buyan.peppa-anywhere`, embeds the production avatar assets, and never starts Vite.
+- The packaging script creates `FatCat Anywhere.app` with bundle identifier `com.buyan.fatcat`, embeds the production avatar assets, and never starts Vite.
 - Runtime smoke launches the packaged app, captures pet-only and open-chat screenshots, verifies transparency around the pet, drags and relaunches to verify position persistence, opens/closes chat, and confirms observation pause is visible.
 
 ## Limitations for this phase

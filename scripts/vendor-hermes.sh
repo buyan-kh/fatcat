@@ -3,7 +3,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
-SOURCE="${PEPPA_HERMES_SOURCE:-$HOME/.hermes/hermes-agent}"
+SOURCE="${FATCAT_HERMES_SOURCE:-$HOME/.hermes/hermes-agent}"
 VENDOR="$REPO_ROOT/vendor/hermes"
 EXPECTED_COMMIT="533886c8b8eb67ff8b389b7f48e7d5e5d9c575b9"
 
@@ -13,16 +13,16 @@ fail() { echo "Hermes vendor sync failed: $1" >&2; exit 1; }
 [[ -f "$SOURCE/run_agent.py" ]] || fail "Hermes source is missing run_agent.py: $SOURCE"
 
 actual_commit="$(git -C "$SOURCE" rev-parse HEAD)"
-if [[ "$actual_commit" != "$EXPECTED_COMMIT" && "${PEPPA_ALLOW_HERMES_COMMIT_MISMATCH:-0}" != "1" ]]; then
+if [[ "$actual_commit" != "$EXPECTED_COMMIT" && "${FATCAT_ALLOW_HERMES_COMMIT_MISMATCH:-0}" != "1" ]]; then
   fail "source is $actual_commit; expected $EXPECTED_COMMIT"
 fi
 
-if [[ "${PEPPA_ALLOW_DIRTY_HERMES_SOURCE:-0}" != "1" ]]; then
-  [[ -z "$(git -C "$SOURCE" status --porcelain)" ]] || fail "source checkout is dirty; set PEPPA_ALLOW_DIRTY_HERMES_SOURCE=1 only for a deliberate snapshot"
+if [[ "${FATCAT_ALLOW_DIRTY_HERMES_SOURCE:-0}" != "1" ]]; then
+  [[ -z "$(git -C "$SOURCE" status --porcelain)" ]] || fail "source checkout is dirty; set FATCAT_ALLOW_DIRTY_HERMES_SOURCE=1 only for a deliberate snapshot"
 fi
 
 if [[ -e "$VENDOR" ]]; then
-  [[ "${PEPPA_ALLOW_VENDOR_OVERWRITE:-0}" == "1" ]] || fail "vendor tree already exists; set PEPPA_ALLOW_VENDOR_OVERWRITE=1 to replace it"
+  [[ "${FATCAT_ALLOW_VENDOR_OVERWRITE:-0}" == "1" ]] || fail "vendor tree already exists; set FATCAT_ALLOW_VENDOR_OVERWRITE=1 to replace it"
   rm -rf "$VENDOR"
 fi
 

@@ -14,11 +14,11 @@ type TranscriptProps = {
   onSuggestion: (text: string) => void
   onRetry: () => void
   onNewChat: () => void
-  onApprove: (proposalId: string) => void
-  onDeny: (proposalId: string) => void
+  onApprove?: (proposalId: string) => void
+  onDeny?: (proposalId: string) => void
 }
 
-export function Transcript({ messages, connection, resumeError, onSuggestion, onRetry, onNewChat, onApprove, onDeny }: TranscriptProps) {
+export function Transcript({ messages, connection, resumeError, onSuggestion, onRetry, onNewChat, onApprove = () => undefined, onDeny = () => undefined }: TranscriptProps) {
   const viewport = useRef<HTMLDivElement>(null)
   const [nearBottom, setNearBottom] = useState(true)
 

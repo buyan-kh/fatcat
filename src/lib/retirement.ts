@@ -1,7 +1,10 @@
 export const RETIRED_CONTENT_KEYS = [
+  // Legacy namespaces are read only for this one-time retirement. FatCat
+  // never writes user content to these keys again.
   'peppa-anywhere-memory-v1',
   'peppa-anywhere-goals-v1',
   'peppa-anywhere-learning-v1',
+  'prepst-avatar-lab-notes',
 ] as const
 
 export const RETIREMENT_MARKER = 'fatcat-content-retirement-v1'

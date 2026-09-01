@@ -11,7 +11,7 @@ describe('FatCat ownership boundary', () => {
   })
 
   it('does not persist transcripts from the daemon', () => {
-    const source = readFileSync(`${sourceRoot}/../agent/peppa_agent/server.py`, 'utf8')
+    const source = readFileSync(`${sourceRoot}/../agent/fatcat_agent/server.py`, 'utf8')
     expect(source).not.toMatch(/append_(message|assistant_delta)|merge_history/)
   })
 })

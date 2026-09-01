@@ -8,10 +8,10 @@ from types import SimpleNamespace
 
 from pathlib import Path
 
-from peppa_agent.server import PeppaAgentServer, PeppaAgentSession, _FatCatACPBridge
+from fatcat_agent.server import FatCatAgentServer, FatCatAgentSession, _FatCatACPBridge
 
 
-class MissingProviderAgentSession(PeppaAgentSession):
+class MissingProviderAgentSession(FatCatAgentSession):
     def _make_agent(self):
         raise RuntimeError("No LLM provider configured")
 
@@ -23,8 +23,8 @@ class ServerTests(unittest.IsolatedAsyncioTestCase):
         async def emit(event):
             events.append(event)
 
-        server = PeppaAgentServer(Path("/tmp/peppa-test.sock"), Path("/tmp/peppa-test-home"))
-        session = PeppaAgentSession("session-1", ".", emit, asyncio.get_running_loop())
+        server = FatCatAgentServer(Path("/tmp/fatcat-test.sock"), Path("/tmp/fatcat-test-home"))
+        session = FatCatAgentSession("session-1", ".", emit, asyncio.get_running_loop())
         server.sessions["session-1"] = session
         bridge = _FatCatACPBridge(server)
         update = SimpleNamespace(
@@ -38,7 +38,7 @@ class ServerTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_streamed_reply_is_broadcast_without_transcript_persistence(self):
         with tempfile.TemporaryDirectory() as root:
-            server = PeppaAgentServer(Path(root) / "agent.sock", Path(root) / "Hermes")
+            server = FatCatAgentServer(Path(root) / "agent.sock", Path(root) / "Hermes")
             server.conversation_store.create("c1", "First", root)
             server.conversation_store.attach_session("c1", "s1")
             server.session_conversations["s1"] = "c1"
@@ -57,7 +57,7 @@ class ServerTests(unittest.IsolatedAsyncioTestCase):
                 await writer.wait_closed()
 
             listener = await asyncio.start_unix_server(close_client, path=str(socket_path))
-            server = PeppaAgentServer(socket_path, Path(root) / "Hermes")
+            server = FatCatAgentServer(socket_path, Path(root) / "Hermes")
             try:
                 with self.assertRaisesRegex(RuntimeError, "already running"):
                     await server.claim_socket_path()
@@ -76,7 +76,7 @@ class ServerTests(unittest.IsolatedAsyncioTestCase):
     async def test_two_identified_clients_receive_one_deduplicated_pet_click(self):
         with tempfile.TemporaryDirectory() as root:
             socket_path = Path(root) / "fatcat.sock"
-            server = PeppaAgentServer(socket_path, Path(root) / "Hermes")
+            server = FatCatAgentServer(socket_path, Path(root) / "Hermes")
             listener = await asyncio.start_unix_server(server.handle_client, path=str(socket_path))
             async with listener:
                 native_reader, native_writer = await asyncio.open_unix_connection(str(socket_path))
@@ -132,7 +132,7 @@ class ServerTests(unittest.IsolatedAsyncioTestCase):
             def validate(self, provider, model):
                 return {"provider": provider, "model": model, "usable": True, "detail": "ok"}
 
-        server = PeppaAgentServer(Path("/tmp/peppa-test.sock"), Path("/tmp/peppa-test-home"), config_bridge=FakeBridge())
+        server = FatCatAgentServer(Path("/tmp/fatcat-test.sock"), Path("/tmp/fatcat-test-home"), config_bridge=FakeBridge())
 
         inventory = await server.handle_message({"version": 1, "type": "provider_inventory", "request_id": "r1"}, lambda event: None)
         models = await server.handle_message({"version": 1, "type": "provider_models", "request_id": "r2", "provider_id": "openai-codex", "refresh": True}, lambda event: None)
@@ -153,8 +153,8 @@ class ServerTests(unittest.IsolatedAsyncioTestCase):
             def set_credential_ref(self, provider, credential_ref):
                 raise ValueError("secret value must not be sent")
 
-        server = PeppaAgentServer(Path("/tmp/peppa-test.sock"), Path("/tmp/peppa-test-home"), config_bridge=FailingBridge())
-        with self.assertLogs("peppa_agent", level="ERROR") as logs:
+        server = FatCatAgentServer(Path("/tmp/fatcat-test.sock"), Path("/tmp/fatcat-test-home"), config_bridge=FailingBridge())
+        with self.assertLogs("fatcat_agent", level="ERROR") as logs:
             response = await server.handle_message(
                 {"version": 1, "type": "provider_set_credential_ref", "request_id": "r1", "provider_id": "openai-api", "credential_ref": "fatcat-key:openai-api"},
                 lambda event: None,
@@ -166,7 +166,7 @@ class ServerTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("secret value", "\n".join(logs.output))
 
     async def test_shutdown_ack_requests_server_shutdown(self):
-        server = PeppaAgentServer(Path("/tmp/peppa-test.sock"), Path("/tmp/peppa-test-home"), allow_shutdown=True)
+        server = FatCatAgentServer(Path("/tmp/fatcat-test.sock"), Path("/tmp/fatcat-test-home"), allow_shutdown=True)
         server.shutdown_event = asyncio.Event()
 
         response = await server.handle_message({"version": 1, "type": "shutdown"}, lambda event: None)
@@ -175,7 +175,7 @@ class ServerTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(server.shutdown_event.is_set())
 
     async def test_persistent_agent_rejects_client_shutdown(self):
-        server = PeppaAgentServer(Path("/tmp/peppa-test.sock"), Path("/tmp/peppa-test-home"), allow_shutdown=False)
+        server = FatCatAgentServer(Path("/tmp/fatcat-test.sock"), Path("/tmp/fatcat-test-home"), allow_shutdown=False)
         server.shutdown_event = asyncio.Event()
 
         response = await server.handle_message({"version": 1, "type": "shutdown", "request_id": "r1"}, lambda event: None)
@@ -207,7 +207,7 @@ class ServerTests(unittest.IsolatedAsyncioTestCase):
                 return None
 
         with tempfile.TemporaryDirectory() as root:
-            server = PeppaAgentServer(Path(root) / "agent.sock", Path(root) / "Hermes")
+            server = FatCatAgentServer(Path(root) / "agent.sock", Path(root) / "Hermes")
             server.conversation_store.create("c1", "First", root)
             server.conversation_store.attach_session("c1", "missing")
             server.session_manager = FakeManager()
@@ -230,7 +230,7 @@ class ServerTests(unittest.IsolatedAsyncioTestCase):
                 return SimpleNamespace(stop_reason="end_turn")
 
         with tempfile.TemporaryDirectory() as root:
-            server = PeppaAgentServer(Path(root) / "agent.sock", Path(root) / "Hermes")
+            server = FatCatAgentServer(Path(root) / "agent.sock", Path(root) / "Hermes")
             server.conversation_store.create("c1", "First", root)
             server.conversation_store.attach_session("c1", "s1")
             server.session_manager = FakeManager()
@@ -252,11 +252,11 @@ class ServerTests(unittest.IsolatedAsyncioTestCase):
                 return SimpleNamespace(stop_reason="end_turn")
 
         with tempfile.TemporaryDirectory() as root:
-            server = PeppaAgentServer(Path(root) / "agent.sock", Path(root) / "Hermes")
+            server = FatCatAgentServer(Path(root) / "agent.sock", Path(root) / "Hermes")
             server.conversation_store.create("c1", "First", root)
             server.conversation_store.attach_session("c1", "s1")
             state = SimpleNamespace(session_id="s1", cwd=root, agent=SimpleNamespace(), history=[], cancel_event=threading.Event())
-            server.sessions["s1"] = PeppaAgentSession("s1", root, server.broadcast, asyncio.get_running_loop(), state, None, FakeACPAgent())
+            server.sessions["s1"] = FatCatAgentSession("s1", root, server.broadcast, asyncio.get_running_loop(), state, None, FakeACPAgent())
 
             response = await server.handle_message(
                 {"version": 1, "type": "user_message", "request_id": "r1", "session_id": "s1", "text": "hello"},
@@ -269,7 +269,7 @@ class ServerTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_turn_rejects_a_session_owned_by_another_conversation(self):
         with tempfile.TemporaryDirectory() as root:
-            server = PeppaAgentServer(Path(root) / "agent.sock", Path(root) / "Hermes")
+            server = FatCatAgentServer(Path(root) / "agent.sock", Path(root) / "Hermes")
             server.conversation_store.create("c1", "First", root)
             server.conversation_store.attach_session("c1", "s1")
             server.conversation_store.create("c2", "Second", root)
@@ -303,7 +303,7 @@ class ServerTests(unittest.IsolatedAsyncioTestCase):
 
         manager = FakeManager()
         with tempfile.TemporaryDirectory() as root:
-            server = PeppaAgentServer(Path(root) / "agent.sock", Path(root) / "Hermes")
+            server = FatCatAgentServer(Path(root) / "agent.sock", Path(root) / "Hermes")
             server.session_manager = manager
             first = await server.handle_message(
                 {"version": 1, "type": "new_session", "request_id": "r1", "conversation_id": "c1", "cwd": "/tmp"},
@@ -332,7 +332,7 @@ class ServerTests(unittest.IsolatedAsyncioTestCase):
                 return state if session_id == state.session_id else None
 
         with tempfile.TemporaryDirectory() as root:
-            server = PeppaAgentServer(Path(root) / "agent.sock", Path(root) / "Hermes")
+            server = FatCatAgentServer(Path(root) / "agent.sock", Path(root) / "Hermes")
             server.conversation_store.create("c1", "First", root)
             server.conversation_store.attach_session("c1", "s1")
             server.session_manager = FakeManager()
@@ -363,7 +363,7 @@ class ServerTests(unittest.IsolatedAsyncioTestCase):
         async def emit(event):
             events.append(event)
 
-        session = PeppaAgentSession("session-1", ".", emit, asyncio.get_running_loop(), state)
+        session = FatCatAgentSession("session-1", ".", emit, asyncio.get_running_loop(), state)
         await asyncio.gather(session.prompt("request-1", "one"), session.prompt("request-2", "two"))
 
         self.assertEqual(agent.maximum_active, 1)
@@ -381,7 +381,7 @@ class ServerTests(unittest.IsolatedAsyncioTestCase):
         async def emit(event):
             events.append(event)
 
-        session = PeppaAgentSession("session-1", ".", emit, asyncio.get_running_loop(), state)
+        session = FatCatAgentSession("session-1", ".", emit, asyncio.get_running_loop(), state)
         prompt_task = asyncio.create_task(session.prompt("request-1", "hello"))
         await asyncio.sleep(0.005)
         state.cancel_event.set()
@@ -407,7 +407,7 @@ class ServerTests(unittest.IsolatedAsyncioTestCase):
         async def emit(event):
             events.append(event)
 
-        session = PeppaAgentSession(
+        session = FatCatAgentSession(
             "session-1", ".", emit, asyncio.get_running_loop(), state, acp_agent=acp_agent
         )
         await session.prompt("request-1", "hello")
@@ -420,8 +420,8 @@ class ServerTests(unittest.IsolatedAsyncioTestCase):
         async def emit(event):
             events.append(event)
 
-        server = PeppaAgentServer(Path("/tmp/peppa-test.sock"), Path("/tmp/peppa-test-home"))
-        session = PeppaAgentSession("session-1", ".", emit, asyncio.get_running_loop())
+        server = FatCatAgentServer(Path("/tmp/fatcat-test.sock"), Path("/tmp/fatcat-test-home"))
+        session = FatCatAgentSession("session-1", ".", emit, asyncio.get_running_loop())
         server.sessions["session-1"] = session
         bridge = _FatCatACPBridge(server)
         permission = asyncio.create_task(bridge.request_permission(
@@ -440,7 +440,7 @@ class ServerTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue((await permission).outcome.option_id == "allow_once")
 
     async def test_unknown_approval_id_is_denied_without_resuming_hermes(self):
-        server = PeppaAgentServer(Path("/tmp/peppa-test.sock"), Path("/tmp/peppa-test-home"))
+        server = FatCatAgentServer(Path("/tmp/fatcat-test.sock"), Path("/tmp/fatcat-test-home"))
         response = await server.handle_message(
             {"version": 1, "type": "approve_action", "request_id": "approval-1", "proposal_id": "missing"},
             lambda event: None,

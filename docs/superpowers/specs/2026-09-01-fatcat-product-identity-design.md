@@ -4,7 +4,7 @@
 
 FatCat is the product. The Electron client is the primary application, the
 native macOS app is the embodied pet, and the root Vite app is an internal
-avatar renderer/lab only. Peppa, Peppa Anywhere, Prepst, and local companion
+avatar renderer/lab only. FatCat, FatCat Anywhere, FatCat, and local companion
 MVP are retired identities.
 
 The rename is comprehensive across package metadata, app display names,

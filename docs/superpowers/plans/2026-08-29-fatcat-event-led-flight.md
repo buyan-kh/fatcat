@@ -4,7 +4,7 @@
 
 **Goal:** Replace the repeating grounded grow/shrink loop with neutral idle presentation, event-driven reactions, and safe event-led desktop flights.
 
-**Architecture:** Keep native Swift responsible for desktop window movement and safety policy. Add a small pure event-to-cue policy and one-cue queue in `PeppaAnywhereCore`; have `FatCatFlightController` consume those cues from `PetModel` life events. Add a separate reaction cue bridge to the avatar web surface, whose grounded frame stays at neutral body scale while flight/reaction phases remain composed.
+**Architecture:** Keep native Swift responsible for desktop window movement and safety policy. Add a small pure event-to-cue policy and one-cue queue in `FatCatCore`; have `FatCatFlightController` consume those cues from `PetModel` life events. Add a separate reaction cue bridge to the avatar web surface, whose grounded frame stays at neutral body scale while flight/reaction phases remain composed.
 
 **Tech Stack:** Swift 6 / Swift Testing / AppKit / SwiftUI / WKWebView, TypeScript / React / Vitest / Vite.
 
@@ -16,11 +16,11 @@
 - Modify `src/lib/fatcat-motion.test.ts`: replace idle whole-body loop assertions with neutral-grounded and event-reaction assertions.
 - Modify `src/avatar-main.tsx`: remove grounded use of the repeating scale track, add `setReaction` bridge state, and compose reaction scale with flight transforms.
 - Modify `src/lib/fatcat-flight-surface.test.ts`: assert the reaction bridge and no grounded timer-scale call.
-- Modify `macos/PeppaAnywhere/Sources/PeppaAnywhereCore/FatCatFlight.swift`: define testable event cues and a one-pending-cue queue.
-- Modify `macos/PeppaAnywhere/Sources/PeppaAnywhereCore/FatCatAvatarNavigation.swift`: encode reaction JavaScript safely.
-- Modify `macos/PeppaAnywhere/Sources/PeppaAnywhere/AppMain.swift`: publish life events/reaction cues, wire the avatar bridge, and make the controller event-led instead of timer-led.
-- Modify `macos/PeppaAnywhere/Tests/PeppaAnywhereCoreTests/FatCatFlightTests.swift`: test event mapping, queue debouncing, and reaction bridge JavaScript.
-- Modify `macos/PeppaAnywhere/Tests/PeppaAnywhereCoreTests/FatCatAvatarContractTests.swift`: cover the production reaction bridge contract.
+- Modify `macos/FatCat/Sources/FatCatCore/FatCatFlight.swift`: define testable event cues and a one-pending-cue queue.
+- Modify `macos/FatCat/Sources/FatCatCore/FatCatAvatarNavigation.swift`: encode reaction JavaScript safely.
+- Modify `macos/FatCat/Sources/FatCat/AppMain.swift`: publish life events/reaction cues, wire the avatar bridge, and make the controller event-led instead of timer-led.
+- Modify `macos/FatCat/Tests/FatCatCoreTests/FatCatFlightTests.swift`: test event mapping, queue debouncing, and reaction bridge JavaScript.
+- Modify `macos/FatCat/Tests/FatCatCoreTests/FatCatAvatarContractTests.swift`: cover the production reaction bridge contract.
 
 ### Task 1: Make grounded web motion neutral
 
@@ -104,8 +104,8 @@ git commit -m "fix: keep FatCat grounded scale neutral"
 **Files:**
 - Modify: `src/avatar-main.tsx`
 - Modify: `src/lib/fatcat-flight-surface.test.ts`
-- Modify: `macos/PeppaAnywhere/Sources/PeppaAnywhereCore/FatCatAvatarNavigation.swift`
-- Modify: `macos/PeppaAnywhere/Tests/PeppaAnywhereCoreTests/FatCatAvatarContractTests.swift`
+- Modify: `macos/FatCat/Sources/FatCatCore/FatCatAvatarNavigation.swift`
+- Modify: `macos/FatCat/Tests/FatCatCoreTests/FatCatAvatarContractTests.swift`
 
 - [ ] **Step 1: Write failing source/bridge tests.** Add checks that `avatar-main.tsx` exposes `setReaction`, uses `groundedLifePose`, and does not call `idleLifePose` for the grounded frame. Add a Swift test:
 
@@ -118,7 +118,7 @@ git commit -m "fix: keep FatCat grounded scale neutral"
 
 - [ ] **Step 2: Run the focused TypeScript and Swift tests to verify red.**
 
-Run: `npm test -- src/lib/fatcat-flight-surface.test.ts` and `swift test --package-path macos/PeppaAnywhere --filter PeppaAnywhereCoreTests.FatCatAvatarContractTests`
+Run: `npm test -- src/lib/fatcat-flight-surface.test.ts` and `swift test --package-path macos/FatCat --filter FatCatCoreTests.FatCatAvatarContractTests`
 
 Expected: FAIL because the bridge and grounded implementation are not present.
 
@@ -147,15 +147,15 @@ Expected: PASS and TypeScript compilation succeeds.
 - [ ] **Step 5: Commit the avatar bridge change.**
 
 ```bash
-git add src/avatar-main.tsx src/lib/fatcat-motion.test.ts src/lib/fatcat-flight-surface.test.ts macos/PeppaAnywhere/Sources/PeppaAnywhereCore/FatCatAvatarNavigation.swift macos/PeppaAnywhere/Tests/PeppaAnywhereCoreTests/FatCatAvatarContractTests.swift
+git add src/avatar-main.tsx src/lib/fatcat-motion.test.ts src/lib/fatcat-flight-surface.test.ts macos/FatCat/Sources/FatCatCore/FatCatAvatarNavigation.swift macos/FatCat/Tests/FatCatCoreTests/FatCatAvatarContractTests.swift
 git commit -m "feat: add event reaction bridge to FatCat avatar"
 ```
 
 ### Task 3: Add pure native event-to-cue policy and one-cue debouncing
 
 **Files:**
-- Modify: `macos/PeppaAnywhere/Sources/PeppaAnywhereCore/FatCatFlight.swift`
-- Test: `macos/PeppaAnywhere/Tests/PeppaAnywhereCoreTests/FatCatFlightTests.swift`
+- Modify: `macos/FatCat/Sources/FatCatCore/FatCatFlight.swift`
+- Test: `macos/FatCat/Tests/FatCatCoreTests/FatCatFlightTests.swift`
 
 - [ ] **Step 1: Write failing Swift tests for the approved mapping.** Add tests for the exact table:
 
@@ -181,7 +181,7 @@ git commit -m "feat: add event reaction bridge to FatCat avatar"
 
 - [ ] **Step 2: Run the focused Swift tests and verify red.**
 
-Run: `swift test --package-path macos/PeppaAnywhere --filter PeppaAnywhereCoreTests.FatCatFlightTests`
+Run: `swift test --package-path macos/FatCat --filter FatCatCoreTests.FatCatFlightTests`
 
 Expected: FAIL because the cue types, mapper, and queue do not exist.
 
@@ -200,28 +200,28 @@ Implement `FatCatFlightEventPolicy.cue(for:)` with no cue for `.tick`, `.userSen
 
 - [ ] **Step 4: Run all native core flight tests and verify green.**
 
-Run: `swift test --package-path macos/PeppaAnywhere --filter PeppaAnywhereCoreTests.FatCatFlightTests`
+Run: `swift test --package-path macos/FatCat --filter FatCatCoreTests.FatCatFlightTests`
 
 Expected: PASS, including all existing planner/policy/animator tests.
 
 - [ ] **Step 5: Commit the pure event policy.**
 
 ```bash
-git add macos/PeppaAnywhere/Sources/PeppaAnywhereCore/FatCatFlight.swift macos/PeppaAnywhere/Tests/PeppaAnywhereCoreTests/FatCatFlightTests.swift
+git add macos/FatCat/Sources/FatCatCore/FatCatFlight.swift macos/FatCat/Tests/FatCatCoreTests/FatCatFlightTests.swift
 git commit -m "feat: model event-led FatCat flight cues"
 ```
 
 ### Task 4: Wire life events into the native controller and disable timer-only roaming
 
 **Files:**
-- Modify: `macos/PeppaAnywhere/Sources/PeppaAnywhere/AppMain.swift`
-- Modify: `macos/PeppaAnywhere/Tests/PeppaAnywhereCoreTests/FatCatAvatarContractTests.swift`
+- Modify: `macos/FatCat/Sources/FatCat/AppMain.swift`
+- Modify: `macos/FatCat/Tests/FatCatCoreTests/FatCatAvatarContractTests.swift`
 
 - [ ] **Step 1: Add a failing source contract for event-led scheduling.** Assert that `AppMain.swift` contains the life-event callback/controller handler and does not use `.idleReposition` from the periodic evaluator as its default branch. Keep the existing surface test that window movement stays native.
 
 - [ ] **Step 2: Run the contract test and verify red.**
 
-Run: `swift test --package-path macos/PeppaAnywhere --filter PeppaAnywhereCoreTests.FatCatAvatarContractTests`
+Run: `swift test --package-path macos/FatCat --filter FatCatCoreTests.FatCatAvatarContractTests`
 
 Expected: FAIL because the controller is still timer-selected and `PetModel` has no event callback/reaction cue.
 
@@ -251,14 +251,14 @@ private func handleLifeEvent(_ event: FatCatLifeEvent) {
 
 - [ ] **Step 4: Run focused tests, full TypeScript checks, and native tests.**
 
-Run: `npm test && npm run lint && swift test --package-path macos/PeppaAnywhere`
+Run: `npm test && npm run lint && swift test --package-path macos/FatCat`
 
 Expected: all TypeScript and Swift tests pass, and no timer-only idle flight remains in the controller.
 
 - [ ] **Step 5: Commit the event-led controller wiring.**
 
 ```bash
-git add macos/PeppaAnywhere/Sources/PeppaAnywhere/AppMain.swift macos/PeppaAnywhere/Sources/PeppaAnywhereCore/FatCatAvatarNavigation.swift macos/PeppaAnywhere/Tests/PeppaAnywhereCoreTests/FatCatAvatarContractTests.swift
+git add macos/FatCat/Sources/FatCat/AppMain.swift macos/FatCat/Sources/FatCatCore/FatCatAvatarNavigation.swift macos/FatCat/Tests/FatCatCoreTests/FatCatAvatarContractTests.swift
 git commit -m "fix: make FatCat desktop movement event led"
 ```
 
@@ -275,8 +275,8 @@ Run:
 npm test
 npm run lint
 npm run build
-swift test --package-path macos/PeppaAnywhere
-swift build --package-path macos/PeppaAnywhere
+swift test --package-path macos/FatCat
+swift build --package-path macos/FatCat
 ```
 
 Expected: every command exits `0` with no test failures or TypeScript errors.

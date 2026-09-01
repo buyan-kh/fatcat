@@ -1,15 +1,18 @@
 {
-  "name": "peppa-anywhere",
+  "name": "fatcat",
   "private": true,
   "version": "0.1.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "avatar:lab": "vite --config vite.avatar.config.ts",
     "build": "tsc -b && vite build",
     "build:avatar": "vite build --config vite.avatar.config.ts",
     "electron:dev": "npm --prefix electron run dev",
     "electron:test": "npm --prefix electron test",
     "electron:build": "npm --prefix electron run build",
+    "electron:typecheck": "npm --prefix electron run typecheck",
+    "electron:smoke": "npm --prefix electron test -- src/main/agent/shared-session-smoke.test.ts",
     "test": "vitest run",
     "test:watch": "vitest",
     "lint": "tsc -b --pretty false"

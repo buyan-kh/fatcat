@@ -23,7 +23,7 @@ type TraceRow = {
 const ACTIVE_STATES: TurnState[] = ['sending', 'thinking', 'working', 'streaming', 'stopping']
 
 /** The supplied ThinkingState treatment, fed by real Hermes activities. */
-export function TurnActivity({ activities, onApprove, onDeny }: { activities: TurnActivityModel[]; onApprove: (proposalId: string) => void; onDeny: (proposalId: string) => void }) {
+export function TurnActivity({ activities, onApprove = () => undefined, onDeny = () => undefined }: { activities: TurnActivityModel[]; onApprove?: (proposalId: string) => void; onDeny?: (proposalId: string) => void }) {
   const [manualExpanded, setManualExpanded] = useState<boolean | null>(null)
   const [open, setOpen] = useState<Set<string>>(new Set())
   const traceRef = useRef<HTMLDivElement>(null)

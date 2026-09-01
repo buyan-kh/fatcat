@@ -292,14 +292,62 @@ export class FatCatService extends EventEmitter {
       }
       case 'tool_call': {
         if (!this.activeRequestId) return
-        this.ensureAssistant(this.activeRequestId).activities.push({ id: event.request_id, requestId: this.activeRequestId, kind: 'tool', label: event.name, arguments: event.arguments, status: 'working' })
+        const assistant = this.ensureAssistant(this.activeRequestId)
+        const id = legacyActivityId('tool', event.request_id)
+        const activity = assistant.activities.find((item) => item.id === id)
+        if (activity) {
+          activity.label = event.name
+          activity.arguments = event.arguments
+          activity.status = 'working'
+        } else {
+          assistant.activities.push({ id, requestId: this.activeRequestId, kind: 'tool', label: event.name, arguments: event.arguments, status: 'working' })
+        }
         break
       }
       case 'action_result': {
-        const activity = this.messages.flatMap((item) => item.activities).find((item) => item.id === event.request_id)
+        const activity = this.messages.flatMap((item) => item.activities).find((item) => item.id === legacyActivityId('tool', event.request_id))
         if (activity) {
           activity.detail = event.detail
           activity.status = event.success ? 'completed' : 'failed'
+        }
+        break
+      }
+      case 'verification_result': {
+        const requestId = this.activeRequestId ?? event.request_id
+        const assistant = this.ensureAssistant(requestId)
+        const id = legacyActivityId('verification', event.request_id)
+        const activity = assistant.activities.find((item) => item.id === id)
+        const status = event.success ? 'completed' : 'failed'
+        if (activity) {
+          activity.label = 'Verification'
+          activity.detail = event.detail
+          activity.status = status
+        } else {
+          assistant.activities.push({ id, requestId, kind: 'tool', label: 'Verification', detail: event.detail, status })
+        }
+        break
+      }
+      case 'permission_request':
+      case 'proposed_action': {
+        const requestId = this.activeRequestId ?? event.request_id
+        const assistant = this.ensureAssistant(requestId)
+        const id = legacyActivityId('approval', event.request_id)
+        const activity = assistant.activities.find((item) => item.id === id)
+        if (activity) {
+          activity.label = event.action
+          activity.detail = event.reason
+          activity.status = 'working'
+          activity.approval = { proposalId: event.request_id, risk: event.risk }
+        } else {
+          assistant.activities.push({
+            id,
+            requestId,
+            kind: 'tool',
+            label: event.action,
+            detail: event.reason,
+            status: 'working',
+            approval: { proposalId: event.request_id, risk: event.risk },
+          })
         }
         break
       }
@@ -388,7 +436,13 @@ export class FatCatService extends EventEmitter {
     const tool = typeof rawTool === 'string' ? rawTool : event.summary
     const status = event.kind === 'tool.needs_approval' || event.kind === 'native_action.approval_requested'
       ? 'working'
-      : event.kind.endsWith('.failed') ? 'failed' : event.kind.endsWith('.completed') || event.kind === 'verification.completed' ? 'completed' : 'working'
+      : event.kind.endsWith('.failed')
+        ? 'failed'
+        : event.kind === 'native_action.result'
+          ? details.success === false ? 'failed' : 'completed'
+          : event.kind === 'verification.completed'
+            ? details.success === false ? 'failed' : 'completed'
+            : event.kind.endsWith('.completed') ? 'completed' : 'working'
     if (!activity) {
       activity = { id: toolID, requestId, kind: 'tool', label: tool, status }
       assistant.activities.push(activity)
@@ -448,6 +502,10 @@ export class FatCatService extends EventEmitter {
 
 function message(role: ChatMessage['role'], text: string, requestId?: string, id: string = randomUUID()): ChatMessage {
   return { id, role, text, requestId, isStreaming: false, activities: [] }
+}
+
+function legacyActivityId(kind: string, requestId: string): string {
+  return `legacy:${kind}:${requestId}`
 }
 
 function normalizeTurnState(value: string): TurnState | null {

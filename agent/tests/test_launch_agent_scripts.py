@@ -31,12 +31,12 @@ class LaunchAgentScriptTests(unittest.TestCase):
         self.assertNotIn("rm -rf", script)
 
     def test_native_build_registers_the_bundled_agent_before_opening(self):
-        script = (ROOT / "scripts/run-peppa-macos.sh").read_text(encoding="utf-8")
+        script = (ROOT / "scripts/run-fatcat-macos.sh").read_text(encoding="utf-8")
 
         install = script.index('install-fatcat-launch-agent.sh')
         launch = script.index('open -a "$APP_BUNDLE"')
         self.assertLess(install, launch)
-        self.assertIn('FATCAT_AGENT_PATH="$APP_BUNDLE/Contents/Resources/PeppaAgent/PeppaAgent"', script)
+        self.assertIn('FATCAT_AGENT_PATH="$APP_BUNDLE/Contents/Resources/FatCatAgent/FatCatAgent"', script)
 
     def test_installer_retries_a_transient_launchd_bootstrap_race(self):
         with tempfile.TemporaryDirectory() as root:
@@ -56,7 +56,7 @@ class LaunchAgentScriptTests(unittest.TestCase):
                 encoding="utf-8",
             )
             launchctl.chmod(0o755)
-            agent = root_path / "PeppaAgent"
+            agent = root_path / "FatCatAgent"
             agent.write_text("#!/bin/sh\n", encoding="utf-8")
             agent.chmod(0o755)
             environment = os.environ | {

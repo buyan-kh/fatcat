@@ -1,7 +1,7 @@
 import unittest
 from types import SimpleNamespace
 
-from peppa_agent.config_bridge import ConfigBridge
+from fatcat_agent.config_bridge import ConfigBridge
 
 
 class FakeConfig:

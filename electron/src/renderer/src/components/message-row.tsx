@@ -11,11 +11,11 @@ type MessageRowProps = {
   message: ChatMessage
   onCopy: (text: string) => void
   onRetry: () => void
-  onApprove: (proposalId: string) => void
-  onDeny: (proposalId: string) => void
+  onApprove?: (proposalId: string) => void
+  onDeny?: (proposalId: string) => void
 }
 
-export function MessageRow({ message, onCopy, onRetry, onApprove, onDeny }: MessageRowProps) {
+export function MessageRow({ message, onCopy, onRetry, onApprove = () => undefined, onDeny = () => undefined }: MessageRowProps) {
   if (message.role === 'system') {
     return <div className="surface-card mx-auto max-w-xl px-3 py-2 text-xs leading-5 text-muted-foreground">{message.text}</div>
   }

@@ -2,7 +2,7 @@
 
 ## Goal
 
-Create an isolated, light-theme browser playground under `prepst.com/animations` for exploring Bible Strong avatar definitions, expressions, and animation timelines without touching the PrepSt landing page.
+Create an isolated, light-theme browser playground under `fatcat.com/animations` for exploring Bible Strong avatar definitions, expressions, and animation timelines without touching the PrepSt landing page.
 
 ## User experience
 
@@ -16,7 +16,7 @@ The first screen is a workbench rather than a marketing page:
 - A JSON import drop zone and file picker load additional valid `*.avatar.json` definitions in the browser. Invalid files produce an inline error and leave the current avatar untouched.
 - A small notes field persists experiment notes to `localStorage` for the current browser session.
 
-The initial bundled definition is the supplied Strobi definition, with the display name set to Peppa. The lab must preserve the definition's real semantic keys and metadata; it must not fabricate extra avatars or reactions.
+The initial bundled definition is the supplied FatCat definition, with the display name set to FatCat. The lab must preserve the definition's real semantic keys and metadata; it must not fabricate extra avatars or reactions.
 
 ## Architecture
 

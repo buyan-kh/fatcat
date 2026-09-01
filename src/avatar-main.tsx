@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { createRoot } from 'react-dom/client'
 import { Avatar } from '@bible-strong/avatar-react'
 import type { AnimationKey, AvatarDefinition } from '@bible-strong/avatar-core'
-import bundledDefinition from '../public/strobi.avatar.json'
+import bundledDefinition from '../public/fatcat.avatar.json'
 import {
   appendageScaleDelta,
   earFollowRotationDelta,

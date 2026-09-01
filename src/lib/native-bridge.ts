@@ -27,17 +27,19 @@ export function applyNativePrivacyConfig(bridge: NativeBridge | undefined, priva
   bridge?.setPrivateApps?.([...privateApps])
 }
 
-export function isCaptureActive(native: boolean, status: NativeCaptureStatus | undefined, fallback: boolean): boolean {
-  return native ? status?.capturing === true && status.paused === false : fallback
+export function isCaptureActive(native: boolean, status: NativeCaptureStatus | undefined, _fallback = false): boolean {
+  // A missing native bridge is an unavailable capability, never a simulated
+  // observation stream. Callers can label a separate demo surface explicitly.
+  return native && status?.capturing === true && status.paused === false
 }
 
-type PeppaWindow = Window & {
-  __PEPPA_NATIVE__?: NativeBridge
+type FatCatWindow = Window & {
+  __FATCAT_NATIVE__?: NativeBridge
 }
 
 export function getNativeBridge(): NativeBridge | undefined {
   if (typeof window === 'undefined') return undefined
-  return (window as PeppaWindow).__PEPPA_NATIVE__
+  return (window as FatCatWindow).__FATCAT_NATIVE__
 }
 
 export function subscribeNativeObservations(onObservation: (observation: ScreenObservation) => void): () => void {
@@ -46,8 +48,8 @@ export function subscribeNativeObservations(onObservation: (observation: ScreenO
     const detail = (event as CustomEvent<ScreenObservation>).detail
     if (detail?.activeApp && detail.timestamp) onObservation(detail)
   }
-  window.addEventListener('peppa:observation', handler)
-  return () => window.removeEventListener('peppa:observation', handler)
+  window.addEventListener('fatcat:observation', handler)
+  return () => window.removeEventListener('fatcat:observation', handler)
 }
 
 export function subscribeNativeCaptureStatus(onStatus: (status: NativeCaptureStatus) => void): () => void {
@@ -56,6 +58,6 @@ export function subscribeNativeCaptureStatus(onStatus: (status: NativeCaptureSta
     const detail = (event as CustomEvent<NativeCaptureStatus>).detail
     if (typeof detail?.status === 'string') onStatus(detail)
   }
-  window.addEventListener('peppa:capture-status', handler)
-  return () => window.removeEventListener('peppa:capture-status', handler)
+  window.addEventListener('fatcat:capture-status', handler)
+  return () => window.removeEventListener('fatcat:capture-status', handler)
 }

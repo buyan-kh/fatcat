@@ -158,7 +158,7 @@ describe('FatCatService', () => {
   it('accepts the new Electron session even after a native snapshot arrives', async () => {
     const record = await service.createConversation('/tmp/project')
     const creation = transport.commands.at(-1)!
-    transport.event({ version: 1, type: 'conversation_snapshot', selected_id: 'native-chat', records: [{ id: 'native-chat', title: 'Native chat', workspace_path: '/tmp', session_id: 'native-session', messages: [] }] })
+    transport.event({ version: 1, type: 'conversation_snapshot', selected_id: 'native-chat', records: [{ id: 'native-chat', title: 'Native chat', workspace_path: '/tmp', session_id: 'native-session' }] })
     transport.event({ version: 1, type: 'session_ready', request_id: requestId(creation), conversation_id: record.id, session_id: 'electron-session' })
     await vi.waitFor(async () => expect((await service.snapshot()).conversations.find((item) => item.id === record.id)?.hermesSessionId).toBe('electron-session'))
     await service.sendMessage('New chat reply')
@@ -180,6 +180,31 @@ describe('FatCatService', () => {
     await vi.waitFor(async () => {
       const assistant = (await service.snapshot()).messages.at(-1)
       expect(assistant?.activities.find((activity) => activity.id === 'tool-1')).toMatchObject({ label: 'send_email', status: 'completed' })
+    })
+  })
+
+  it('renders legacy approvals and verification with collision-proof activity IDs', async () => {
+    const record = await service.createConversation('/tmp/project')
+    const creation = transport.commands.at(-1)!
+    transport.event({ version: 1, type: 'session_ready', request_id: requestId(creation), conversation_id: record.id, session_id: 's1' })
+    await vi.waitFor(async () => expect((await service.snapshot()).conversations[0]?.hermesSessionId).toBe('s1'))
+    await service.sendMessage('Send it')
+    transport.event({ version: 1, type: 'permission_request', request_id: 'same-id', action: 'send_email', risk: 'high', reason: 'Send to Sarah' })
+    transport.event({ version: 1, type: 'verification_result', request_id: 'same-id', success: true, detail: 'Message sent' })
+
+    await vi.waitFor(async () => {
+      const assistant = (await service.snapshot()).messages.at(-1)
+      expect(assistant?.activities.find((activity) => activity.id === 'legacy:approval:same-id')).toMatchObject({
+        label: 'send_email',
+        approval: { proposalId: 'same-id', risk: 'high' },
+      })
+      expect(assistant?.activities.find((activity) => activity.id === 'legacy:verification:same-id')).toMatchObject({
+        label: 'Verification',
+        status: 'completed',
+      })
+      expect(assistant?.activities.find((activity) => activity.id === 'legacy:approval:same-id')?.id).not.toBe(
+        assistant?.activities.find((activity) => activity.id === 'legacy:verification:same-id')?.id,
+      )
     })
   })
 })

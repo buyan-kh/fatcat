@@ -35,7 +35,7 @@ and provenance.
 ```bash
 npm install
 npm --prefix electron install
-./scripts/run-peppa-macos.sh
+./scripts/run-fatcat-macos.sh
 ```
 
 The run script builds the app, registers one persistent per-user FatCat Agent,
@@ -74,7 +74,7 @@ npm --prefix electron install
 npm run electron:dev
 ```
 
-Start the LaunchAgent first with `./scripts/run-peppa-macos.sh` or
+Start the LaunchAgent first with `./scripts/run-fatcat-macos.sh` or
 `./scripts/install-fatcat-launch-agent.sh`. Both clients use
 `FATCAT_AGENT_SOCKET` only when an explicit development socket override is
 needed.
@@ -87,8 +87,8 @@ Hermes session without sending a paid model prompt, and is skipped unless
 ## Verify
 
 ```bash
-swift build --package-path macos/PeppaAnywhere
-swift test --package-path macos/PeppaAnywhere
+swift build --package-path macos/FatCat
+swift test --package-path macos/FatCat
 PYTHONPATH=agent python3 -m unittest discover -s agent/tests
 bash scripts/test-hermes-bundle.sh
 ```
@@ -96,12 +96,12 @@ bash scripts/test-hermes-bundle.sh
 ## Build a distributable DMG
 
 The build machine needs the pinned Hermes Python runtime/dependencies available
-under `~/.hermes/hermes-agent` (or `PEPPA_HERMES_BUILD_SOURCE`). The resulting
+under `~/.hermes/hermes-agent` (or `FATCAT_HERMES_BUILD_SOURCE`). The resulting
 `FatCat.app` and `dist/FatCat.dmg` contain the runtime and do not require Hermes
 to be installed on the user’s Mac.
 
 ```bash
-./scripts/run-peppa-macos.sh
+./scripts/run-fatcat-macos.sh
 ```
 
 The release gate verifies the embedded commit, license, runtime startup, and

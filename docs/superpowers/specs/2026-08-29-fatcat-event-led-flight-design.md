@@ -34,7 +34,7 @@ Native Swift remains responsible for panel movement and event policy. `FatCatFli
 
 The avatar web surface owns presentation-only reactions. It receives a new cancellable reaction cue through the existing native bridge, renders a short reaction pulse, and composes that pulse with flight phase transforms. Its grounded idle frame must not call the repeating `idleLifePose` body-scale track; the idle loop may retain non-scaling attention details.
 
-The native event source remains `FatCatLife` and `PeppaAnywhereAppDelegate` agent message handling. Event-to-flight mapping must be explicit and testable rather than inferred from arbitrary animation keys.
+The native event source remains `FatCatLife` and `FatCatAppDelegate` agent message handling. Event-to-flight mapping must be explicit and testable rather than inferred from arbitrary animation keys.
 
 ## Error handling and accessibility
 

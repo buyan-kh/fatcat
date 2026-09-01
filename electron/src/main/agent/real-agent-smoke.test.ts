@@ -29,7 +29,7 @@ describe('bundled FatCat Agent smoke test', () => {
 
         const sessionReady = waitForEvent(
           transport,
-          (event): event is Extract<AgentEvent, { type: 'session_ready' }> => event.type === 'session_ready',
+          (event): event is Extract<AgentEvent, { type: 'session_ready' }> => 'type' in event && event.type === 'session_ready',
         )
         transport.send({
           version: 1,

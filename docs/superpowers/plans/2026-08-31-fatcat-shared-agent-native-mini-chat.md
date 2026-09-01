@@ -12,29 +12,29 @@
 
 ## File map
 
-- `agent/peppa_agent/server.py` — multi-client server, broadcasts, canonical conversations, singleton-safe lifecycle.
-- `agent/peppa_agent/conversations.py` — atomic canonical conversation index and explicit session attachment.
+- `agent/fatcat_agent/server.py` — multi-client server, broadcasts, canonical conversations, singleton-safe lifecycle.
+- `agent/fatcat_agent/conversations.py` — atomic canonical conversation index and explicit session attachment.
 - `agent/tests/test_server.py` — multi-client, broadcast, reconnect, and explicit-session behavior.
 - `agent/tests/test_conversations.py` — conversation persistence and no-duplicate-session rules.
-- `protocol/peppa-events.schema.json` — shared protocol source of truth.
+- `protocol/fatcat-events.schema.json` — shared protocol source of truth.
 - `scripts/install-fatcat-launch-agent.sh` — install/bootstrap the user LaunchAgent with explicit local paths.
 - `scripts/uninstall-fatcat-launch-agent.sh` — boot out and remove only FatCat's plist.
 - `electron/src/shared/protocol.ts` — TypeScript schemas for client identity and shared conversation events.
 - `electron/src/main/agent/socket-transport.ts` — identified reconnecting connection to shared socket.
 - `electron/src/main/index.ts` — connect-only Electron bootstrap; no process ownership.
 - `electron/src/main/agent/fatcat-service.ts` — agent-owned conversation snapshots and shared transcript events.
-- `macos/PeppaAnywhere/Sources/PeppaAnywhereCore/PeppaIPC.swift` — Swift protocol parity.
-- `macos/PeppaAnywhere/Sources/PeppaAnywhereCore/FatCatPetSettings.swift` — persisted size, movement, speech, and preview settings.
-- `macos/PeppaAnywhere/Sources/PeppaAnywhereCore/FatCatMiniChat.swift` — pure latest-exchange and toggle state.
-- `macos/PeppaAnywhere/Sources/PeppaAnywhere/AppMain.swift` — connect-only Swift client, mini-chat panel, settings UI, movement cadence, speech input, and TTS.
+- `macos/FatCat/Sources/FatCatCore/FatCatIPC.swift` — Swift protocol parity.
+- `macos/FatCat/Sources/FatCatCore/FatCatPetSettings.swift` — persisted size, movement, speech, and preview settings.
+- `macos/FatCat/Sources/FatCatCore/FatCatMiniChat.swift` — pure latest-exchange and toggle state.
+- `macos/FatCat/Sources/FatCat/AppMain.swift` — connect-only Swift client, mini-chat panel, settings UI, movement cadence, speech input, and TTS.
 - matching Python, Vitest, and Swift test files — behavior contracts.
 
 ### Task 1: Canonical conversations and multi-client agent
 
 **Files:**
-- Create: `agent/peppa_agent/conversations.py`
+- Create: `agent/fatcat_agent/conversations.py`
 - Create: `agent/tests/test_conversations.py`
-- Modify: `agent/peppa_agent/server.py`
+- Modify: `agent/fatcat_agent/server.py`
 - Modify: `agent/tests/test_server.py`
 
 - [ ] **Step 1: Write failing persistence tests**
@@ -57,7 +57,7 @@ with tempfile.TemporaryDirectory() as root:
 - [ ] **Step 2: Run tests and verify RED**
 
 Run: `PYTHONPATH=agent python3 -m unittest agent.tests.test_conversations -v`
-Expected: import failure for `peppa_agent.conversations`.
+Expected: import failure for `fatcat_agent.conversations`.
 
 - [ ] **Step 3: Implement the atomic store**
 
@@ -67,7 +67,7 @@ titles/workspaces, and expose `snapshot`, `create`, `select`, `attach_session`,
 
 - [ ] **Step 4: Write failing multi-client tests**
 
-Start `PeppaAgentServer` with a fake session manager, connect native and Electron
+Start `FatCatAgentServer` with a fake session manager, connect native and Electron
 clients, hello as distinct roles, send `pet_clicked`, and assert both receive it.
 Disconnect one and assert the other remains connected. Send duplicate
 `pet_clicked` event IDs and assert one broadcast.
@@ -133,9 +133,9 @@ Commit: `feat: install FatCat Agent as a user LaunchAgent`
 **Files:**
 - Modify: `electron/src/shared/protocol.ts`
 - Modify: `electron/src/shared/protocol.test.ts`
-- Modify: `macos/PeppaAnywhere/Sources/PeppaAnywhereCore/PeppaIPC.swift`
-- Modify: `macos/PeppaAnywhere/Tests/PeppaAnywhereCoreTests/PeppaIPCTests.swift`
-- Modify: `protocol/peppa-events.schema.json`
+- Modify: `macos/FatCat/Sources/FatCatCore/FatCatIPC.swift`
+- Modify: `macos/FatCat/Tests/FatCatCoreTests/FatCatIPCTests.swift`
+- Modify: `protocol/fatcat-events.schema.json`
 
 - [ ] **Step 1: Add failing codec tests**
 
@@ -146,7 +146,7 @@ conversation/session/request IDs. Verify credential rejection remains intact.
 - [ ] **Step 2: Run both protocol suites and verify RED**
 
 Run: `npm --prefix electron test -- src/shared/protocol.test.ts`
-Run: `swift test --package-path macos/PeppaAnywhere --filter PeppaIPCTests`
+Run: `swift test --package-path macos/FatCat --filter FatCatIPCTests`
 Expected: new messages are rejected/unknown.
 
 - [ ] **Step 3: Implement protocol parity**
@@ -202,19 +202,19 @@ Commit: `feat: connect Electron to shared FatCat Agent`
 ### Task 5: Make Swift connect-only and preserve the pet panel
 
 **Files:**
-- Modify: `macos/PeppaAnywhere/Sources/PeppaAnywhere/AppMain.swift`
-- Modify: `macos/PeppaAnywhere/Tests/PeppaAnywhereCoreTests/FatCatAvatarContractTests.swift`
+- Modify: `macos/FatCat/Sources/FatCat/AppMain.swift`
+- Modify: `macos/FatCat/Tests/FatCatCoreTests/FatCatAvatarContractTests.swift`
 
 - [ ] **Step 1: Write failing lifecycle/window tests**
 
-Assert `PeppaAgentClient` contains no `Process`, `process.run`, `terminate`,
+Assert `FatCatAgentClient` contains no `Process`, `process.run`, `terminate`,
 `shutdown`, or socket deletion. Assert the pet panel is created at the persisted
 square size and no click path calls `setContentSize`. Assert stop closes only the
 client socket.
 
 - [ ] **Step 2: Run tests and verify RED**
 
-Run: `swift test --package-path macos/PeppaAnywhere --filter FatCatAvatarContractTests`
+Run: `swift test --package-path macos/FatCat --filter FatCatAvatarContractTests`
 Expected: existing process ownership and resize-to-chat code violate contracts.
 
 - [ ] **Step 3: Implement connect-only Swift client**
@@ -233,9 +233,9 @@ Commit: `feat: connect native pet to shared FatCat Agent`
 ### Task 6: Build the native latest-exchange mini-chat
 
 **Files:**
-- Create: `macos/PeppaAnywhere/Sources/PeppaAnywhereCore/FatCatMiniChat.swift`
-- Create: `macos/PeppaAnywhere/Tests/PeppaAnywhereCoreTests/FatCatMiniChatTests.swift`
-- Modify: `macos/PeppaAnywhere/Sources/PeppaAnywhere/AppMain.swift`
+- Create: `macos/FatCat/Sources/FatCatCore/FatCatMiniChat.swift`
+- Create: `macos/FatCat/Tests/FatCatCoreTests/FatCatMiniChatTests.swift`
+- Modify: `macos/FatCat/Sources/FatCat/AppMain.swift`
 
 - [ ] **Step 1: Write failing pure-state tests**
 
@@ -244,7 +244,7 @@ stream accumulation, disconnected state, and close behavior.
 
 - [ ] **Step 2: Run and verify RED**
 
-Run: `swift test --package-path macos/PeppaAnywhere --filter FatCatMiniChatTests`
+Run: `swift test --package-path macos/FatCat --filter FatCatMiniChatTests`
 Expected: type is missing.
 
 - [ ] **Step 3: Implement state and separate panel**
@@ -256,7 +256,7 @@ and sends `pet_clicked`; a second click hides it. Never resize or move the pet.
 
 - [ ] **Step 4: Verify and commit**
 
-Run: `swift test --package-path macos/PeppaAnywhere`
+Run: `swift test --package-path macos/FatCat`
 Expected: pass.
 
 Commit: `feat: add native FatCat mini chat`
@@ -264,10 +264,10 @@ Commit: `feat: add native FatCat mini chat`
 ### Task 7: Add size, movement, emotions, and voice
 
 **Files:**
-- Create: `macos/PeppaAnywhere/Sources/PeppaAnywhereCore/FatCatPetSettings.swift`
-- Create: `macos/PeppaAnywhere/Tests/PeppaAnywhereCoreTests/FatCatPetSettingsTests.swift`
-- Modify: `macos/PeppaAnywhere/Sources/PeppaAnywhere/AppMain.swift`
-- Modify: `macos/PeppaAnywhere/Package.swift`
+- Create: `macos/FatCat/Sources/FatCatCore/FatCatPetSettings.swift`
+- Create: `macos/FatCat/Tests/FatCatCoreTests/FatCatPetSettingsTests.swift`
+- Modify: `macos/FatCat/Sources/FatCat/AppMain.swift`
+- Modify: `macos/FatCat/Package.swift`
 
 - [ ] **Step 1: Write failing settings tests**
 
@@ -276,7 +276,7 @@ preview animation validation, and preservation of the pet's anchor while sizing.
 
 - [ ] **Step 2: Run and verify RED**
 
-Run: `swift test --package-path macos/PeppaAnywhere --filter FatCatPetSettingsTests`
+Run: `swift test --package-path macos/FatCat --filter FatCatPetSettingsTests`
 Expected: settings types are missing.
 
 - [ ] **Step 3: Implement settings and UI**
@@ -299,8 +299,8 @@ speaking states, and stop cleanly on panel close or user toggle.
 
 - [ ] **Step 6: Verify and commit**
 
-Run: `swift test --package-path macos/PeppaAnywhere`
-Run: `swift build --package-path macos/PeppaAnywhere`
+Run: `swift test --package-path macos/FatCat`
+Run: `swift build --package-path macos/FatCat`
 Expected: both pass.
 
 Commit: `feat: add FatCat pet controls and voice`
@@ -328,8 +328,8 @@ PYTHONPATH=agent python3 -m unittest discover -s agent/tests -v
 npm --prefix electron test
 npm --prefix electron run typecheck
 npm --prefix electron run build
-swift test --package-path macos/PeppaAnywhere
-swift build --package-path macos/PeppaAnywhere
+swift test --package-path macos/FatCat
+swift build --package-path macos/FatCat
 bash -n scripts/install-fatcat-launch-agent.sh scripts/uninstall-fatcat-launch-agent.sh
 git diff --check
 ```

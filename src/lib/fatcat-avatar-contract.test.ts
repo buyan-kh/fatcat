@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
-import bundledDefinition from '../../public/strobi.avatar.json'
+import bundledDefinition from '../../public/fatcat.avatar.json'
 import type { AvatarDefinition } from '@bible-strong/avatar-core'
 import { describe, expect, it } from 'vitest'
 
@@ -8,11 +8,11 @@ const definition = bundledDefinition as unknown as AvatarDefinition
 const avatarMain = readFileSync(fileURLToPath(new URL('../avatar-main.tsx', import.meta.url)), 'utf8')
 const avatarStyles = readFileSync(fileURLToPath(new URL('../avatar-styles.css', import.meta.url)), 'utf8')
 const appMain = readFileSync(
-  fileURLToPath(new URL('../../macos/PeppaAnywhere/Sources/PeppaAnywhere/AppMain.swift', import.meta.url)),
+  fileURLToPath(new URL('../../macos/FatCat/Sources/FatCat/AppMain.swift', import.meta.url)),
   'utf8',
 )
 const packageManifest = readFileSync(
-  fileURLToPath(new URL('../../macos/PeppaAnywhere/Package.swift', import.meta.url)),
+  fileURLToPath(new URL('../../macos/FatCat/Package.swift', import.meta.url)),
   'utf8',
 )
 
@@ -45,16 +45,15 @@ describe('FatCat avatar visual contract', () => {
   it('renders through the original React avatar packages, not a native 3D reinterpretation', () => {
     expect(avatarMain).toContain("from '@bible-strong/avatar-react'")
     expect(avatarMain).toContain("from '@bible-strong/avatar-core'")
-    expect(avatarMain).toContain("../public/strobi.avatar.json")
+    expect(avatarMain).toContain("../public/fatcat.avatar.json")
     expect(avatarMain).toContain('<Avatar')
     expect(avatarMain).toContain('fatcat-ears')
     expect(avatarMain).toContain('fatcat-tail')
-    expect(appMain).not.toContain('PeppaAvatarRenderer')
-    expect(appMain).not.toContain('PeppaAvatarView')
+    expect(appMain).not.toContain('FatCatAvatarRenderer')
     expect(appMain).not.toContain('SceneKit')
     expect(appMain).not.toContain('RealityKit')
     expect(appMain).not.toContain('import Metal')
-    expect(packageManifest).toContain('exclude: ["PeppaAvatar.swift"]')
+    expect(packageManifest).toContain('exclude: ["FatCatAvatar.swift"]')
   })
 
   it('keeps the avatar web surface visually transparent', () => {

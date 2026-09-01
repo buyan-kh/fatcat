@@ -1,0 +1,6 @@
+.build/
+Sources/FatCat/Resources/WebApp/*
+Sources/FatCat/Resources/*
+!Sources/FatCat/Resources/strobI.avatar.json
+!Sources/FatCat/Resources/FatCatAvatar/
+!Sources/FatCat/Resources/FatCatAvatar/**

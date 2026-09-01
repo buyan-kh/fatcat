@@ -111,7 +111,7 @@ export class SocketTransport extends EventEmitter {
       if (line.trim()) {
         try {
           const event = decodeAgentEvent(line)
-          if (event.type === 'hello_ack' && !this.ready) {
+          if ('type' in event && event.type === 'hello_ack' && !this.ready) {
             this.ready = true
             this.keepAlive = true
             this.reconnectAttempt = 0

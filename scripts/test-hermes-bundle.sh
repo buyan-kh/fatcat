@@ -29,11 +29,11 @@ fi
 test_parent="$(mktemp -d /tmp/fatcat-hermes-bundle.XXXXXX)"
 cleanup() { rm -rf "$test_parent"; }
 trap cleanup EXIT
-stage="$test_parent/PeppaAgent"
-unset PEPPA_HERMES_SOURCE FATCAT_HERMES_PATH PEPPA_HERMES_BUILD_SOURCE
-"$ROOT/scripts/build-peppa-agent.sh" "$stage"
-require_file "$stage/PeppaAgent"
-require_file "$stage/PEPPA_HERMES_COMMIT"
+stage="$test_parent/FatCatAgent"
+unset FATCAT_HERMES_SOURCE FATCAT_HERMES_PATH FATCAT_HERMES_BUILD_SOURCE
+"$ROOT/scripts/build-fatcat-agent.sh" "$stage"
+require_file "$stage/FatCatAgent"
+require_file "$stage/FATCAT_HERMES_COMMIT"
 if find "$stage" -type f \( -name 'auth.json' -o -name '.env' -o -name '*.pyc' \) -print -quit | rg .; then
   echo "personal config or generated Python bytecode leaked into staged agent" >&2
   exit 1
@@ -46,14 +46,14 @@ if [[ -n "$developer_path_matches" ]]; then
 fi
 socket="$test_parent/agent.sock"
 home="$test_parent/hermes-home"
-FATCAT_ALLOW_SHUTDOWN=1 "$stage/PeppaAgent" --socket "$socket" --hermes-home "$home" >/dev/null 2>&1 &
+FATCAT_ALLOW_SHUTDOWN=1 "$stage/FatCatAgent" --socket "$socket" --hermes-home "$home" >/dev/null 2>&1 &
 agent_pid=$!
 for _ in $(seq 1 50); do
   [[ -S "$socket" ]] && break
-  kill -0 "$agent_pid" 2>/dev/null || { wait "$agent_pid" || true; echo "bundled PeppaAgent exited before opening its socket" >&2; exit 1; }
+  kill -0 "$agent_pid" 2>/dev/null || { wait "$agent_pid" || true; echo "bundled FatCatAgent exited before opening its socket" >&2; exit 1; }
   sleep 0.1
 done
-[[ -S "$socket" ]] || { kill "$agent_pid" 2>/dev/null || true; wait "$agent_pid" || true; echo "bundled PeppaAgent did not start" >&2; exit 1; }
+[[ -S "$socket" ]] || { kill "$agent_pid" 2>/dev/null || true; wait "$agent_pid" || true; echo "bundled FatCatAgent did not start" >&2; exit 1; }
 "$stage/runtime/bin/python3" - "$socket" <<'PY'
 import json
 import socket

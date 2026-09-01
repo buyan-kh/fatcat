@@ -10,7 +10,7 @@ import { AgentSupervisor, redactDiagnostic } from './agent-supervisor'
 describe('AgentSupervisor', () => {
   it('reports a missing executable with an actionable message', async () => {
     const supervisor = new AgentSupervisor({
-      agentPath: '/missing/PeppaAgent',
+      agentPath: '/missing/FatCatAgent',
       socketPath: '/tmp/fatcat-missing.sock',
       hermesHome: '/tmp/fatcat-hermes',
     })

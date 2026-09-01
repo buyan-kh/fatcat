@@ -12,15 +12,15 @@
 
 ## File map and ownership boundaries
 
-- `agent/peppa_agent/server.py`: Hermes ACP adapter, session attachment, event normalization, channel fan-out, and approval continuations. It must not write transcript bodies.
-- `agent/peppa_agent/conversations.py`: metadata-only FatCat session index during migration; remove message storage and history merge methods.
+- `agent/fatcat_agent/server.py`: Hermes ACP adapter, session attachment, event normalization, channel fan-out, and approval continuations. It must not write transcript bodies.
+- `agent/fatcat_agent/conversations.py`: metadata-only FatCat session index during migration; remove message storage and history merge methods.
 - `agent/tests/test_server.py`, `agent/tests/test_conversations.py`: daemon/session/retirement contract tests.
 - `electron/src/shared/protocol.ts`, `electron/src/shared/chat.ts`: v2 event envelope and renderer activity types.
 - `electron/src/renderer/src/lib/chat-reducer.ts`, `electron/src/renderer/src/hooks/use-fatcat.ts`, `electron/src/renderer/src/components/turn-activity.tsx`: generic event reduction and display.
 - `electron/src/shared/protocol.test.ts`, `electron/src/renderer/src/lib/chat-reducer.test.ts`, related Electron tests: protocol and synchronization coverage.
-- `macos/PeppaAnywhere/Sources/PeppaAnywhereCore/PeppaIPC.swift`: Swift codec parity with the v2 protocol and metadata-only conversation records.
-- `macos/PeppaAnywhere/Sources/PeppaAnywhereCore/NativeActionPolicy.swift`, `macos/PeppaAnywhere/Sources/PeppaAnywhere/NativeActionExecutor.swift`: native safety enforcement and verification.
-- `macos/PeppaAnywhere/Sources/PeppaAnywhere/AppMain.swift`, `macos/PeppaAnywhere/Sources/PeppaAnywhereCore/FatCatChatState.swift`: Hermes history/event-driven surface state; no persisted transcript source.
+- `macos/FatCat/Sources/FatCatCore/FatCatIPC.swift`: Swift codec parity with the v2 protocol and metadata-only conversation records.
+- `macos/FatCat/Sources/FatCatCore/NativeActionPolicy.swift`, `macos/FatCat/Sources/FatCat/NativeActionExecutor.swift`: native safety enforcement and verification.
+- `macos/FatCat/Sources/FatCat/AppMain.swift`, `macos/FatCat/Sources/FatCatCore/FatCatChatState.swift`: Hermes history/event-driven surface state; no persisted transcript source.
 - `src/components/CompanionDashboard.tsx`, `src/components/HermesEventActivity.tsx`, `src/lib/brain.ts`, `src/lib/memory.ts`, `src/lib/goals.ts`, `src/lib/learning.ts`, and their tests: remove the legacy local agent path from the product build.
 - `src/lib/retirement.ts` and `src/lib/retirement.test.ts`: one-time, idempotent local content retirement.
 
@@ -61,8 +61,8 @@ git commit -m "test: define Hermes ownership boundary"
 **Files:**
 - Modify: `electron/src/shared/protocol.ts`
 - Modify: `electron/src/shared/chat.ts`
-- Modify: `macos/PeppaAnywhere/Sources/PeppaAnywhereCore/PeppaIPC.swift`
-- Test: `electron/src/shared/hermes-events.test.ts`, `electron/src/shared/protocol.test.ts`, `macos/PeppaAnywhere/Tests/PeppaAnywhereCoreTests/PeppaIPCTests.swift`
+- Modify: `macos/FatCat/Sources/FatCatCore/FatCatIPC.swift`
+- Test: `electron/src/shared/hermes-events.test.ts`, `electron/src/shared/protocol.test.ts`, `macos/FatCat/Tests/FatCatCoreTests/FatCatIPCTests.swift`
 
 - [ ] **Step 1: Define the exact TypeScript schema.** Add a discriminated `hermesEvent` schema with `version: 2`, `event_id`, `kind`, `session_id`, optional nullable `request_id`, `summary`, and `details: record(string, primitive|string arrays)`. Enumerate the lifecycle kinds from the design spec. Keep the v1 decoder isolated and marked compatibility-only.
 
@@ -78,22 +78,22 @@ Expected: PASS, including malformed-version, unknown-kind, and credential reject
 
 - [ ] **Step 5: Run Swift IPC tests.**
 
-Run: `./scripts/swift-test.sh --filter PeppaIPC`
+Run: `./scripts/swift-test.sh --filter FatCatIPC`
 
 Expected: PASS with v2 round-trip parity and v1 compatibility coverage.
 
 - [ ] **Step 6: Commit the protocol.**
 
 ```bash
-git add electron/src/shared/protocol.ts electron/src/shared/chat.ts macos/PeppaAnywhere/Sources/PeppaAnywhereCore/PeppaIPC.swift
+git add electron/src/shared/protocol.ts electron/src/shared/chat.ts macos/FatCat/Sources/FatCatCore/FatCatIPC.swift
 git commit -m "feat: add generic Hermes event protocol"
 ```
 
 ### Task 3: Convert the Python daemon to metadata-only session routing
 
 **Files:**
-- Modify: `agent/peppa_agent/conversations.py`
-- Modify: `agent/peppa_agent/server.py`
+- Modify: `agent/fatcat_agent/conversations.py`
+- Modify: `agent/fatcat_agent/server.py`
 - Modify: `agent/tests/test_conversations.py`, `agent/tests/test_server.py`
 
 - [ ] **Step 1: Write failing metadata-only store tests.** Assert normalized records contain only `id`, `title`, `workspace_path`, and `session_id`; legacy `messages` are discarded on load; no public append/merge methods exist; selecting/attaching a session remains idempotent.
@@ -102,7 +102,7 @@ git commit -m "feat: add generic Hermes event protocol"
 
 - [ ] **Step 3: Remove transcript persistence.** Delete `append_message`, `append_assistant_delta`, and `merge_history`; update `_normalize_document` to drop `messages`; remove those calls from `broadcast`, `load_session`, and `user_message`. Keep only session-handle metadata and selection.
 
-- [ ] **Step 4: Route v2 events.** Update `_FatCatACPBridge` and `PeppaAgentSession` to emit the generic envelope for message, tool, permission, state, and verification events. Every event must include the Hermes session ID and a stable event ID.
+- [ ] **Step 4: Route v2 events.** Update `_FatCatACPBridge` and `FatCatAgentSession` to emit the generic envelope for message, tool, permission, state, and verification events. Every event must include the Hermes session ID and a stable event ID.
 
 - [ ] **Step 5: Add session-scoped fan-out.** Track channel subscriptions by session, broadcast only to subscribed clients, deduplicate by `event_id`, and keep a bounded in-memory buffer for currently active requests. Never write that buffer to disk.
 
@@ -115,18 +115,18 @@ Expected: PASS with assertions that the JSON store contains no `messages` key an
 - [ ] **Step 7: Commit daemon routing.**
 
 ```bash
-git add agent/peppa_agent/conversations.py agent/peppa_agent/server.py agent/tests/test_conversations.py agent/tests/test_server.py
+git add agent/fatcat_agent/conversations.py agent/fatcat_agent/server.py agent/tests/test_conversations.py agent/tests/test_server.py
 git commit -m "refactor: make FatCat daemon a Hermes session adapter"
 ```
 
 ### Task 4: Implement approval continuations and native-result routing
 
 **Files:**
-- Modify: `agent/peppa_agent/server.py`
-- Modify: `macos/PeppaAnywhere/Sources/PeppaAnywhereCore/NativeActionPolicy.swift`
-- Modify: `macos/PeppaAnywhere/Sources/PeppaAnywhere/NativeActionExecutor.swift`
-- Modify: `macos/PeppaAnywhere/Sources/PeppaAnywhere/AppMain.swift`
-- Test: `agent/tests/test_server.py`, `macos/PeppaAnywhere/Tests/PeppaAnywhereCoreTests/NativeActionTests.swift`
+- Modify: `agent/fatcat_agent/server.py`
+- Modify: `macos/FatCat/Sources/FatCatCore/NativeActionPolicy.swift`
+- Modify: `macos/FatCat/Sources/FatCat/NativeActionExecutor.swift`
+- Modify: `macos/FatCat/Sources/FatCat/AppMain.swift`
+- Test: `agent/tests/test_server.py`, `macos/FatCat/Tests/FatCatCoreTests/NativeActionTests.swift`
 
 - [ ] **Step 1: Write failing approval tests.** Assert a risky proposal emits `tool.needs_approval`, blocks the Hermes continuation, and resumes with an explicit approved/denied result keyed by proposal ID. Assert timeout and stale proposal IDs are denied.
 
@@ -147,7 +147,7 @@ Expected: PASS; no test may execute a mutation without an approval and current p
 - [ ] **Step 7: Commit the safety handshake.**
 
 ```bash
-git add agent/peppa_agent/server.py macos/PeppaAnywhere/Sources/PeppaAnywhereCore/NativeActionPolicy.swift macos/PeppaAnywhere/Sources/PeppaAnywhere/NativeActionExecutor.swift macos/PeppaAnywhere/Sources/PeppaAnywhere/AppMain.swift
+git add agent/fatcat_agent/server.py macos/FatCat/Sources/FatCatCore/NativeActionPolicy.swift macos/FatCat/Sources/FatCat/NativeActionExecutor.swift macos/FatCat/Sources/FatCat/AppMain.swift
 git commit -m "feat: enforce FatCat native approval boundary"
 ```
 
@@ -184,9 +184,9 @@ git commit -m "refactor: render generic Hermes activity events"
 ### Task 6: Migrate native pet and mini-chat to Hermes history/events
 
 **Files:**
-- Modify: `macos/PeppaAnywhere/Sources/PeppaAnywhere/AppMain.swift`
-- Modify: `macos/PeppaAnywhere/Sources/PeppaAnywhereCore/FatCatChatState.swift`
-- Test: `macos/PeppaAnywhere/Tests/PeppaAnywhereCoreTests/FatCatChatStateTests.swift`, `macos/PeppaAnywhere/Tests/PeppaAnywhereCoreTests/FatCatMiniChatTests.swift`, `macos/PeppaAnywhere/Tests/PeppaAnywhereCoreTests/PeppaIPCTests.swift`
+- Modify: `macos/FatCat/Sources/FatCat/AppMain.swift`
+- Modify: `macos/FatCat/Sources/FatCatCore/FatCatChatState.swift`
+- Test: `macos/FatCat/Tests/FatCatCoreTests/FatCatChatStateTests.swift`, `macos/FatCat/Tests/FatCatCoreTests/FatCatMiniChatTests.swift`, `macos/FatCat/Tests/FatCatCoreTests/FatCatIPCTests.swift`
 
 - [ ] **Step 1: Write failing Swift synchronization tests.** Assert a conversation snapshot cannot provide message bodies, Hermes session history reconstructs the visible transcript, duplicate events are ignored, and two subscribers receive the same session-scoped state.
 
@@ -203,7 +203,7 @@ Expected: PASS with a clean relaunch restoring only the Hermes session and repla
 - [ ] **Step 5: Commit native surface migration.**
 
 ```bash
-git add macos/PeppaAnywhere/Sources/PeppaAnywhere/AppMain.swift macos/PeppaAnywhere/Sources/PeppaAnywhereCore/FatCatChatState.swift
+git add macos/FatCat/Sources/FatCat/AppMain.swift macos/FatCat/Sources/FatCatCore/FatCatChatState.swift
 git commit -m "refactor: drive native chat from Hermes events"
 ```
 
@@ -244,11 +244,11 @@ git commit -m "refactor: remove FatCat local agent systems"
 - Create: `src/lib/retirement.ts`
 - Create: `src/lib/retirement.test.ts`
 - Modify: Electron/native startup migration entry points
-- Modify: `agent/peppa_agent/conversations.py` migration marker handling
+- Modify: `agent/fatcat_agent/conversations.py` migration marker handling
 
 - [ ] **Step 1: Write failing retirement tests.** Given legacy localStorage keys and transcript JSON, assert the migration removes content keys/fields, preserves UI/session metadata, writes one schema marker, and produces the same result when run twice.
 
-- [ ] **Step 2: Implement `retireFatCatContent`.** Accept explicit storage/filesystem adapters, remove `peppa-anywhere-memory-v1`, goals, learning, and transcript message arrays, retain only non-content session handles, and write a versioned timestamp marker. Never call Hermes import APIs.
+- [ ] **Step 2: Implement `retireFatCatContent`.** Accept explicit storage/filesystem adapters, remove `fatcat-memory-v1`, goals, learning, and transcript message arrays, retain only non-content session handles, and write a versioned timestamp marker. Never call Hermes import APIs.
 
 - [ ] **Step 3: Gate startup on the marker.** Invoke the migration before any renderer/native state hydration. If retirement fails, surface a blocking migration error and do not load legacy content.
 
@@ -261,7 +261,7 @@ Expected: PASS for first-run, already-retired, malformed, and interrupted migrat
 - [ ] **Step 5: Commit data retirement.**
 
 ```bash
-git add src/lib/retirement.ts src/lib/retirement.test.ts agent/peppa_agent/conversations.py
+git add src/lib/retirement.ts src/lib/retirement.test.ts agent/fatcat_agent/conversations.py
 git commit -m "feat: retire duplicate FatCat content state"
 ```
 
@@ -278,7 +278,7 @@ git commit -m "feat: retire duplicate FatCat content state"
 
 - [ ] **Step 2: Run code-search acceptance checks.**
 
-Run: `rg -n "append_message|append_assistant_delta|merge_history|peppa-anywhere-memory-v1|createGoal|PlannerAdapter|MemoryAdapter" agent electron/src macos/PeppaAnywhere/Sources src -g '!**/.build/**'`
+Run: `rg -n "append_message|append_assistant_delta|merge_history|fatcat-memory-v1|createGoal|PlannerAdapter|MemoryAdapter" agent electron/src macos/FatCat/Sources src -g '!**/.build/**'`
 
 Expected: only migration tests/docs or explicit retirement references remain; no active runtime path uses these symbols.
 
@@ -301,7 +301,7 @@ Expected: all commands pass; bundle verification confirms no developer Hermes da
 - [ ] **Step 6: Commit release verification.**
 
 ```bash
-git add README.md agent/README.md docs/PEPPA-ANYWHERE.md electron/src/shared macos/PeppaAnywhere/Sources/PeppaAnywhereCore
+git add README.md agent/README.md docs/PEPPA-ANYWHERE.md electron/src/shared macos/FatCat/Sources/FatCatCore
 git commit -m "docs: finalize Hermes-first FatCat boundary"
 ```
 

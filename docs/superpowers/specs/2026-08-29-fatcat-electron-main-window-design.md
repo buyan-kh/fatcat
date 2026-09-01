@@ -45,11 +45,11 @@ The existing top-level React avatar playground and the native Swift package rema
 
 ### Process ownership
 
-Each Electron application instance owns one `PeppaAgent` process and one private Unix socket. The main process:
+Each Electron application instance owns one `FatCatAgent` process and one private Unix socket. The main process:
 
 1. Resolves development paths for the Python entry point, vendored Hermes source, and Hermes home.
 2. Creates an app-owned socket directory and removes only its own validated stale socket.
-3. Launches `PeppaAgent` with the existing `--socket` and `--hermes-home` arguments.
+3. Launches `FatCatAgent` with the existing `--socket` and `--hermes-home` arguments.
 4. Connects and completes the version-1 `hello` handshake.
 5. Routes typed requests and events between the socket and renderer.
 6. Requests graceful shutdown on quit and force-terminates only the child process it spawned if the grace period expires.

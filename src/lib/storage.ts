@@ -1,4 +1,4 @@
-export const NOTES_STORAGE_KEY = 'prepst-avatar-lab-notes'
+export const NOTES_STORAGE_KEY = 'fatcat-avatar-lab-notes'
 
 type NotesStorage = Pick<Storage, 'getItem' | 'setItem'>
 

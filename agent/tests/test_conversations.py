@@ -3,7 +3,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from peppa_agent.conversations import ConversationStore, SessionConflict
+from fatcat_agent.conversations import ConversationStore, SessionConflict
 
 
 class ConversationStoreTests(unittest.TestCase):
