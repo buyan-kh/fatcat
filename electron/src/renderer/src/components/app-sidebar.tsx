@@ -53,15 +53,16 @@ export function AppSidebar({
   }, [conversations, query])
 
   return (
-    <aside className={cn('hairline flex h-full shrink-0 flex-col border-r bg-muted/25 transition-[width] duration-200', collapsed ? 'w-[68px]' : 'w-64')}>
-      <div className="app-drag flex h-12 items-center gap-2 px-3 pl-[72px]">
-        {!collapsed && <h1 className="text-sm font-semibold tracking-[-0.01em]">FatCat</h1>}
+    <aside className={cn('hairline flex h-full shrink-0 flex-col border-r bg-muted/25 transition-[width] duration-300', collapsed ? 'w-[52px]' : 'w-56')}>
+      <div className="app-drag flex h-12 items-center gap-2 px-2 pl-[72px]">
+        <span className="flex size-5 shrink-0 items-center justify-center rounded-[7px] bg-foreground text-[10px] font-semibold text-background" aria-hidden>F</span>
+        {!collapsed && <h1 className="min-w-0 truncate text-sm font-semibold tracking-[-0.01em]">FatCat</h1>}
         <Button className="app-no-drag ml-auto" variant="ghost" size="icon-sm" aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'} onClick={onToggle}>
           <SidebarSimple className="size-4" />
         </Button>
       </div>
 
-      <div className="px-2.5 pb-2">
+      <div className="px-2 pb-2">
         <Button className={cn('nav-control surface-card w-full justify-start shadow-none', collapsed && 'justify-center px-0')} variant="outline" onClick={onNewChat} aria-label="New chat">
           <Plus className="size-4" />
           {!collapsed && <span>New chat</span>}
@@ -69,8 +70,12 @@ export function AppSidebar({
       </div>
 
       {!collapsed && (
-        <div className="relative px-2.5 pb-2">
-          <MagnifyingGlass className="pointer-events-none absolute left-5 top-2.5 size-3.5 text-muted-foreground" />
+        <div className="px-2 pb-2">
+          <div className="flex h-7 items-center gap-1.5 px-1 text-xs font-medium text-muted-foreground">
+            <span>Chats</span>
+          </div>
+          <div className="relative">
+            <MagnifyingGlass className="pointer-events-none absolute left-3 top-3 size-3.5 text-muted-foreground" />
           <Input
             type="search"
             aria-label="Search chats"
@@ -79,10 +84,11 @@ export function AppSidebar({
             onChange={(event) => setQuery(event.target.value)}
             className="nav-control border-input bg-background/70 pl-8 text-xs shadow-sm hover:bg-background focus-visible:border-border"
           />
+          </div>
         </div>
       )}
 
-      <ScrollArea className="min-h-0 flex-1 px-2">
+      <ScrollArea className="min-h-0 flex-1 px-1.5">
         {!collapsed && (
           <div className="space-y-0.5 pb-3">
             {visible.length === 0 && <p className="px-2 py-8 text-center text-xs text-muted-foreground">No chats found</p>}
