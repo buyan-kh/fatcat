@@ -15,7 +15,7 @@ type MessageRowProps = {
 
 export function MessageRow({ message, onCopy, onRetry }: MessageRowProps) {
   if (message.role === 'system') {
-    return <div className="surface-card mx-auto max-w-xl rounded-[10px] px-3 py-2 text-xs text-muted-foreground">{message.text}</div>
+    return <div className="surface-card mx-auto max-w-xl px-3 py-2 text-xs leading-5 text-muted-foreground">{message.text}</div>
   }
   const user = message.role === 'user'
   return (
@@ -43,7 +43,7 @@ export function MessageRow({ message, onCopy, onRetry }: MessageRowProps) {
           </div>
         )}
         {message.errorMessage && (
-          <div className="hairline mt-2 flex items-center gap-2 rounded-[10px] border border-destructive/25 bg-destructive/5 px-3 py-2 text-xs text-destructive">
+          <div className="hairline mt-2 flex items-center gap-2 rounded-[10px] border-[0.5px] border-destructive/25 bg-destructive/5 px-3 py-2 text-xs leading-5 text-destructive">
             <span className="flex-1">{message.errorMessage}</span>
             <Button variant="ghost" size="xs" onClick={onRetry}>Retry</Button>
           </div>

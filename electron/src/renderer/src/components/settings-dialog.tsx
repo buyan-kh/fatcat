@@ -35,9 +35,9 @@ export function SettingsDialog({ open, onOpenChange, appearance, providers, diag
         <section className="space-y-2">
           <h3 className="section-caption">Hermes</h3>
           {providers.length > 0 ? providers.map((provider) => (
-            <div key={provider.providerId} className="surface-card rounded-[10px] p-3 text-xs">
+            <div key={provider.providerId} className="surface-card p-3 text-xs leading-5">
               <div className="flex items-center justify-between"><span className="font-medium">{provider.name}</span><span className="text-muted-foreground">{provider.status}</span></div>
-              <p className="mt-1 text-muted-foreground">{provider.model || provider.detail}</p>
+              <p className="mt-0.5 leading-5 text-muted-foreground">{provider.model || provider.detail}</p>
             </div>
           )) : <p className="text-xs text-muted-foreground">Provider details become available after Hermes connects.</p>}
           <Button variant="outline" onClick={onRestartAgent}>Restart Hermes</Button>

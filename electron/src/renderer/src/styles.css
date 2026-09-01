@@ -73,7 +73,13 @@
   --radius-xl: calc(var(--radius) * 1.5);
 }
 
-* { border-color: var(--border); }
+* {
+  border-color: var(--border);
+  /* CSS corner smoothing where supported; the radius below is the fallback. */
+  corner-shape: squircle;
+}
+
+svg { stroke-width: 1; }
 
 html, body, #root { height: 100%; }
 
@@ -93,6 +99,7 @@ button, input, textarea { font: inherit; }
 .hairline { border-width: 0.5px; }
 .surface-card {
   border: 0.5px solid var(--border);
+  border-radius: 10px;
   background: color-mix(in oklab, var(--card) 96%, var(--foreground) 4%);
   box-shadow: 0 1px 2px color-mix(in oklab, var(--foreground) 6%, transparent),
     0 8px 24px color-mix(in oklab, var(--foreground) 4%, transparent);
@@ -102,6 +109,7 @@ button, input, textarea { font: inherit; }
   font-size: 0.75rem;
   font-weight: 500;
   line-height: 1rem;
+  letter-spacing: 0.02em;
 }
 .nav-control { height: 36px; border-radius: 10px; }
 .thinking-shimmer {
@@ -141,6 +149,6 @@ button, input, textarea { font: inherit; }
 .fatcat-markdown ul, .fatcat-markdown ol { margin: 0.5rem 0; padding-left: 1.25rem; }
 .fatcat-markdown ul { list-style: disc; }
 .fatcat-markdown ol { list-style: decimal; }
-.fatcat-markdown blockquote { margin: 0.75rem 0; border-left: 2px solid var(--border); padding-left: 0.75rem; color: var(--muted-foreground); }
+.fatcat-markdown blockquote { margin: 0.75rem 0; border-left: 0.5px solid var(--border); padding-left: 0.75rem; color: var(--muted-foreground); }
 .fatcat-markdown table { width: 100%; border-collapse: collapse; font-size: 0.8rem; }
-.fatcat-markdown th, .fatcat-markdown td { border-bottom: 1px solid var(--border); padding: 0.4rem 0.5rem; text-align: left; }
+.fatcat-markdown th, .fatcat-markdown td { border-bottom: 0.5px solid var(--border); padding: 0.4rem 0.5rem; text-align: left; }

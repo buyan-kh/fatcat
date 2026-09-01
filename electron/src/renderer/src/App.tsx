@@ -83,7 +83,7 @@ export default function App() {
           onAppearanceChange={(appearance) => { void commands.setAppearance(appearance) }}
           onRestartAgent={() => { void commands.restartAgent() }}
         />
-        {state.notice && <button type="button" className="fixed bottom-5 right-5 max-w-sm rounded-lg border bg-popover px-3 py-2 text-left text-xs shadow-lg" onClick={commands.clearNotice}>{state.notice.message}</button>}
+        {state.notice && <button type="button" className="fixed bottom-5 right-5 max-w-sm rounded-[10px] border-[0.5px] bg-popover px-3 py-2 text-left text-xs leading-5 shadow-lg" onClick={commands.clearNotice}>{state.notice.message}</button>}
       </main>
     </TooltipProvider>
   )

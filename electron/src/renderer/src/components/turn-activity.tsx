@@ -64,7 +64,7 @@ export function TurnActivity({ activities }: { activities: TurnActivityModel[] }
         aria-expanded={expanded}
         aria-label={summary}
         onClick={() => setManualExpanded((current) => !(current ?? working))}
-        className="thinking-state-trigger -mx-1.5 flex w-fit items-center gap-2 rounded-[8px] px-1.5 py-1 text-left transition-colors duration-100 hover:bg-muted/70"
+        className="thinking-state-trigger -mx-1.5 flex w-fit items-center gap-2 rounded-[10px] px-1.5 py-1 text-left transition-colors duration-100 hover:bg-muted/70"
       >
         <Sparkle className={cn('size-4', working ? 'text-muted-foreground' : 'text-muted-foreground/65')} weight={working ? 'fill' : 'regular'} />
         {working ? <span className="thinking-shimmer text-[13px] font-medium whitespace-nowrap">{summary}</span> : <span className="thinking-settled text-[13px] font-medium whitespace-nowrap text-muted-foreground">{summary}</span>}
@@ -99,7 +99,7 @@ export function TurnActivity({ activities }: { activities: TurnActivityModel[] }
                       {content}
                       <CaretDown className={cn('ml-auto size-3 shrink-0 text-muted-foreground/70 opacity-0 transition-[opacity,transform]', rowExpanded && 'rotate-180 opacity-100', 'group-hover:opacity-100')} />
                     </button>
-                    {rowExpanded && (row.detail || row.arguments) && <div className="ml-6 mt-0.5 space-y-0.5 border-l border-border/70 pl-3 text-[11px] leading-5 text-muted-foreground">{row.arguments && Object.entries(row.arguments).map(([key, value]) => <p key={key}><span className="font-medium text-foreground/70">{key}</span> <code>{value}</code></p>)}{row.detail && <p>{row.detail}</p>}</div>}
+                    {rowExpanded && (row.detail || row.arguments) && <div className="ml-6 mt-0.5 space-y-0.5 border-l-[0.5px] border-border/70 pl-3 text-[11px] leading-5 text-muted-foreground">{row.arguments && Object.entries(row.arguments).map(([key, value]) => <p key={key}><span className="font-medium text-foreground/70">{key}</span> <code>{value}</code></p>)}{row.detail && <p>{row.detail}</p>}</div>}
                   </div>
                 )
               })}

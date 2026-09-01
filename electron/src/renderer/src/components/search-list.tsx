@@ -38,8 +38,8 @@ export default function SearchList({ items = [], labels = DEFAULT_LABELS, onPick
 
   return (
     <div className={cn('flex min-h-[248px] w-full max-w-72 flex-col items-stretch', className)}>
-      <div className="w-full self-start overflow-hidden rounded-[10px] border border-border/70 bg-card shadow-md">
-        <div className="flex h-10 items-center gap-2 border-b border-border/70 px-3 transition-colors duration-100 hover:bg-accent/50">
+      <div className="w-full self-start overflow-hidden rounded-[10px] border-[0.5px] border-border/70 bg-card shadow-md">
+        <div className="flex h-9 items-center gap-2 border-b-[0.5px] border-border/70 px-3 transition-colors duration-100 hover:bg-accent/50">
           <MagnifyingGlass className="shrink-0 text-muted-foreground" size={14} />
           <input
             type="search"

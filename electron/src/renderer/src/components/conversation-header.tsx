@@ -14,12 +14,12 @@ type ConversationHeaderProps = {
 export function ConversationHeader({ conversation, connection, onChooseWorkspace }: ConversationHeaderProps) {
   const connected = connection.phase === 'connected'
   return (
-    <header className="app-drag hairline flex h-12 shrink-0 items-center gap-3 border-b px-4">
+    <header className="app-drag hairline flex h-12 shrink-0 items-center gap-3 border-b-[0.5px] px-4">
       <div className="min-w-0 flex-1">
         <p className="truncate text-[13px] font-medium">{conversation?.title ?? 'New conversation'}</p>
         <button
           type="button"
-          className="app-no-drag flex max-w-full items-center gap-1 truncate text-[11px] text-muted-foreground hover:text-foreground"
+          className="app-no-drag flex max-w-full items-center gap-1 truncate text-[11px] leading-4 text-muted-foreground hover:text-foreground"
           aria-label="Choose workspace"
           title={conversation?.workspacePath}
           onClick={onChooseWorkspace}

@@ -42,7 +42,7 @@ export function Transcript({ messages, connection, resumeError, onSuggestion, on
       >
         <div className="mx-auto flex min-h-full w-full max-w-3xl flex-col justify-center pb-8 pt-12">
           {connection.phase !== 'connected' && (
-            <div className="surface-card mb-4 flex items-center gap-2 rounded-[10px] px-3 py-2 text-xs text-muted-foreground">
+            <div className="surface-card mb-4 flex items-center gap-2 px-3 py-2 text-xs leading-5 text-muted-foreground">
               <WifiSlash className="size-4" /><span className="flex-1">{connection.detail}</span><Button variant="ghost" size="xs" onClick={onRetry}>Reconnect</Button>
             </div>
           )}
@@ -55,10 +55,10 @@ export function Transcript({ messages, connection, resumeError, onSuggestion, on
             </div>
           ) : messages.length === 0 ? (
             <div className="mx-auto max-w-lg text-center">
-              <div className="surface-card mx-auto mb-4 flex size-10 items-center justify-center rounded-[10px]"><ChatCircleDots className="size-5" /></div>
+              <div className="surface-card mx-auto mb-3 flex size-10 items-center justify-center"><ChatCircleDots className="size-5" /></div>
               <h2 className="text-lg font-medium tracking-tight">What are you working on?</h2>
-              <p className="mt-1.5 text-sm text-muted-foreground">Start a focused conversation with Hermes.</p>
-              <div className="mt-5 flex flex-wrap justify-center gap-2">
+              <p className="mt-1 text-sm leading-6 text-muted-foreground">Start a focused conversation with Hermes.</p>
+              <div className="mt-3 flex flex-wrap justify-center gap-2">
                 {['Help me plan this task', 'Explain this codebase', 'Review my approach'].map((suggestion) => <Button key={suggestion} variant="outline" size="sm" className="nav-control" onClick={() => onSuggestion(suggestion)}>{suggestion}</Button>)}
               </div>
             </div>
