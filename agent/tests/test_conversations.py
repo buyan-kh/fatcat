@@ -1,3 +1,4 @@
+import json
 import tempfile
 import unittest
 from pathlib import Path
@@ -38,6 +39,36 @@ class ConversationStoreTests(unittest.TestCase):
 
             self.assertIsNone(store.get("missing"))
             self.assertEqual(store.snapshot(), {"selected_id": None, "records": []})
+
+    def test_legacy_swift_metadata_is_migrated_before_it_reaches_clients(self):
+        with tempfile.TemporaryDirectory() as root:
+            path = Path(root) / "conversations.json"
+            path.write_text(json.dumps({
+                "selectedID": "conversation-1",
+                "records": [{
+                    "id": "conversation-1",
+                    "title": "Existing chat",
+                    "workspacePath": root,
+                    "hermesSessionID": "session-1",
+                    "lastPreview": "Keep this metadata",
+                }],
+            }), encoding="utf-8")
+
+            snapshot = ConversationStore(path).snapshot()
+
+            self.assertEqual(snapshot, {
+                "selected_id": "conversation-1",
+                "records": [{
+                    "id": "conversation-1",
+                    "title": "Existing chat",
+                    "workspace_path": root,
+                    "session_id": "session-1",
+                    "messages": [],
+                }],
+            })
+            persisted = json.loads(path.read_text(encoding="utf-8"))
+            self.assertNotIn("selectedID", persisted)
+            self.assertNotIn("workspacePath", persisted["records"][0])
 
 
 if __name__ == "__main__":

@@ -17,7 +17,9 @@ class ConversationStore:
     def __init__(self, path: Path):
         self.path = path
         self._lock = threading.RLock()
-        self._document = self._load()
+        self._document, migrated = self._load()
+        if migrated:
+            self._save()
 
     def snapshot(self) -> dict:
         with self._lock:
@@ -92,17 +94,50 @@ class ConversationStore:
             self._save()
             return deepcopy(message)
 
-    def _load(self) -> dict:
+    def _load(self) -> tuple[dict, bool]:
         try:
             value = json.loads(self.path.read_text(encoding="utf-8"))
         except FileNotFoundError:
-            return {"selected_id": None, "records": []}
+            return {"selected_id": None, "records": []}, False
         except (OSError, json.JSONDecodeError) as error:
             raise ValueError(f"invalid conversation store: {error}") from error
         if not isinstance(value, dict) or not isinstance(value.get("records"), list):
             raise ValueError("invalid conversation store document")
-        value.setdefault("selected_id", None)
-        return value
+        normalized = self._normalize_document(value)
+        return normalized, normalized != value
+
+    def _normalize_document(self, value: dict) -> dict:
+        records = []
+        for raw in value["records"]:
+            if not isinstance(raw, dict) or not isinstance(raw.get("id"), str) or not raw["id"].strip():
+                continue
+            conversation_id = raw["id"].strip()
+            title = raw.get("title") if isinstance(raw.get("title"), str) else "New chat"
+            workspace = raw.get("workspace_path") or raw.get("workspacePath") or str(Path.home())
+            session_id = raw.get("session_id") or raw.get("hermesSessionID")
+            messages = []
+            for index, message in enumerate(raw.get("messages") if isinstance(raw.get("messages"), list) else []):
+                if not isinstance(message, dict):
+                    continue
+                role = message.get("role")
+                text = message.get("text")
+                if role not in {"user", "assistant", "system"} or not isinstance(text, str):
+                    continue
+                message_id = message.get("id")
+                if not isinstance(message_id, str) or not message_id.strip():
+                    message_id = f"legacy-{conversation_id}-{index}"
+                messages.append({"id": message_id, "role": role, "text": text})
+            records.append({
+                "id": conversation_id,
+                "title": title.strip() or "New chat",
+                "workspace_path": str(workspace),
+                "session_id": session_id if isinstance(session_id, str) and session_id.strip() else None,
+                "messages": messages,
+            })
+        selected_id = value.get("selected_id") or value.get("selectedID")
+        if not isinstance(selected_id, str) or not any(record["id"] == selected_id for record in records):
+            selected_id = None
+        return {"selected_id": selected_id, "records": records}
 
     def _find(self, conversation_id: str) -> dict | None:
         return next((item for item in self._document["records"] if item.get("id") == conversation_id), None)
