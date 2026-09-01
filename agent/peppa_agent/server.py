@@ -1,8 +1,4 @@
-"""Headless FatCat Agent socket server.
-
-The Swift app owns the process and permissions. This process owns Hermes
-conversation state and emits only typed JSON events on the Unix socket.
-"""
+"""Headless, user-scoped FatCat Agent socket server."""
 
 from __future__ import annotations
 
@@ -12,8 +8,11 @@ import json
 import logging
 import os
 import uuid
+from collections import deque
 from pathlib import Path
 from typing import Any
+
+from peppa_agent.conversations import ConversationStore
 
 LOG = logging.getLogger("peppa_agent")
 FORBIDDEN_KEYS = {"api_key", "access_token", "refresh_token", "cookie", "password", "secret"}
@@ -242,15 +241,20 @@ class _FatCatACPBridge:
 
 
 class PeppaAgentServer:
-    def __init__(self, socket_path: Path, hermes_home: Path, config_bridge=None):
+    def __init__(self, socket_path: Path, hermes_home: Path, config_bridge=None, conversation_store=None):
         self.socket_path = socket_path
         self.hermes_home = hermes_home
+        self.conversation_store = conversation_store or ConversationStore(hermes_home.parent / "conversations.json")
         self.sessions: dict[str, PeppaAgentSession] = {}
+        self.session_conversations: dict[str, str] = {}
         self.session_manager = None
         self.acp_agent = None
         self.config_bridge = config_bridge
         self.loop: asyncio.AbstractEventLoop | None = None
-        self.active_writer: asyncio.StreamWriter | None = None
+        self.clients: dict[str, asyncio.StreamWriter] = {}
+        self.client_roles: dict[str, str] = {}
+        self._seen_event_ids: set[str] = set()
+        self._seen_event_order: deque[str] = deque()
         self.shutdown_event: asyncio.Event | None = None
 
     async def start(self) -> None:
@@ -285,13 +289,7 @@ class PeppaAgentServer:
                 pass
 
     async def handle_client(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
-        if self.active_writer is not None:
-            writer.write((json.dumps(_event("error", request_id=None, message="FatCat Agent accepts one local client at a time"), separators=(",", ":")) + "\n").encode())
-            await writer.drain()
-            writer.close()
-            await writer.wait_closed()
-            return
-        self.active_writer = writer
+        client_id: str | None = None
 
         async def emit(event: dict[str, Any]) -> None:
             writer.write((json.dumps(event, separators=(",", ":")) + "\n").encode())
@@ -304,7 +302,21 @@ class PeppaAgentServer:
                 try:
                     message = json.loads(raw_line)
                     _reject_credentials(message)
-                    response = await self.handle_message(message, emit)
+                    if message.get("type") == "hello":
+                        role = str(message.get("client") or "")
+                        if role not in {"native_pet", "electron_chat"}:
+                            raise ValueError("hello.client must be native_pet or electron_chat")
+                        if client_id is None:
+                            client_id = str(uuid.uuid4())
+                            self.clients[client_id] = writer
+                            self.client_roles[client_id] = role
+                        response = _event("hello_ack", agent_version="fatcat-agent", client_id=client_id)
+                        await emit(response)
+                        await emit(_event("conversation_snapshot", **self.conversation_store.snapshot()))
+                        continue
+                    if client_id is None:
+                        raise ValueError("hello is required before other commands")
+                    response = await self.handle_message(message, self.broadcast)
                     if response is not None:
                         await emit(response)
                     if message.get("type") == "shutdown":
@@ -312,9 +324,37 @@ class PeppaAgentServer:
                 except Exception as error:
                     await emit(_event("error", request_id=None, message=str(error)))
         finally:
-            self.active_writer = None
+            if client_id is not None:
+                self.clients.pop(client_id, None)
+                self.client_roles.pop(client_id, None)
             writer.close()
-            await writer.wait_closed()
+            try:
+                await writer.wait_closed()
+            except (BrokenPipeError, ConnectionResetError):
+                pass
+
+    async def broadcast(self, event: dict[str, Any]) -> None:
+        session_id = event.get("session_id")
+        conversation_id = self.session_conversations.get(str(session_id or ""))
+        if conversation_id:
+            event.setdefault("conversation_id", conversation_id)
+            if event.get("type") == "assistant_delta":
+                self.conversation_store.append_assistant_delta(
+                    conversation_id,
+                    str(event.get("request_id") or uuid.uuid4()),
+                    str(event.get("text") or ""),
+                )
+        payload = (json.dumps(event, separators=(",", ":")) + "\n").encode()
+        stale: list[str] = []
+        for client_id, writer in list(self.clients.items()):
+            try:
+                writer.write(payload)
+                await writer.drain()
+            except (BrokenPipeError, ConnectionResetError):
+                stale.append(client_id)
+        for client_id in stale:
+            self.clients.pop(client_id, None)
+            self.client_roles.pop(client_id, None)
 
     async def handle_message(self, message: dict[str, Any], emit) -> dict[str, Any] | None:
         if message.get("version") != 1:
@@ -322,6 +362,18 @@ class PeppaAgentServer:
         message_type = message.get("type")
         if message_type == "hello":
             return _event("hello_ack", agent_version="fatcat-agent")
+        if message_type == "pet_clicked":
+            event_id = self._required_text(message, "event_id")
+            if event_id in self._seen_event_ids:
+                return None
+            self._remember_event(event_id)
+            await self.broadcast(_event(
+                "pet_clicked",
+                event_id=event_id,
+                pet_id=str(message.get("pet_id") or "primary"),
+                conversation_id=message.get("conversation_id"),
+            ))
+            return None
         if message_type == "new_session":
             manager = self._require_session_manager()
             conversation_id = str(message.get("conversation_id") or "")
@@ -335,8 +387,18 @@ class PeppaAgentServer:
                 state = manager.create_session(cwd=cwd)
             if state is None:
                 raise RuntimeError("Hermes ACP created no usable session")
+            existing = self.conversation_store.get(conversation_id)
+            if existing is None:
+                self.conversation_store.create(
+                    conversation_id,
+                    str(message.get("title") or "New chat"),
+                    cwd,
+                )
+            self.conversation_store.attach_session(conversation_id, state.session_id)
+            self.conversation_store.select(conversation_id)
+            self.session_conversations[state.session_id] = conversation_id
             self.sessions[state.session_id] = PeppaAgentSession(
-                state.session_id, cwd, emit, self.loop or asyncio.get_running_loop(), state, manager, self.acp_agent
+                state.session_id, cwd, self.broadcast, self.loop or asyncio.get_running_loop(), state, manager, self.acp_agent
             )
             return _event("session_ready", request_id=str(message.get("request_id") or uuid.uuid4()), conversation_id=conversation_id, session_id=state.session_id)
         if message_type == "load_session":
@@ -352,8 +414,14 @@ class PeppaAgentServer:
             request_id = str(message.get("request_id") or uuid.uuid4())
             if state is None:
                 return _event("session_load_failed", request_id=request_id, conversation_id=conversation_id, session_id=session_id, message="Hermes could not load this conversation. Start a new chat to continue.")
+            existing = self.conversation_store.get(conversation_id)
+            if existing is None:
+                return _event("session_load_failed", request_id=request_id, conversation_id=conversation_id, session_id=session_id, message="FatCat has no saved conversation for this Hermes session.")
+            self.conversation_store.attach_session(conversation_id, session_id)
+            self.conversation_store.select(conversation_id)
+            self.session_conversations[session_id] = conversation_id
             self.sessions[session_id] = PeppaAgentSession(
-                session_id, cwd, emit, self.loop or asyncio.get_running_loop(), state, manager, self.acp_agent
+                session_id, cwd, self.broadcast, self.loop or asyncio.get_running_loop(), state, manager, self.acp_agent
             )
             for item in state.history:
                 role = str(item.get("role") or "")
@@ -417,6 +485,16 @@ class PeppaAgentServer:
             raise ValueError(f"unsupported message type: {message_type}")
         session_id = str(message.get("session_id") or "")
         request_id = str(message.get("request_id") or uuid.uuid4())
+        conversation_id = str(message.get("conversation_id") or self.session_conversations.get(session_id) or "")
+        if conversation_id:
+            self.session_conversations[session_id] = conversation_id
+            self.conversation_store.append_message(conversation_id, request_id, "user", str(message.get("text") or ""))
+            await self.broadcast(_event(
+                "message_added",
+                conversation_id=conversation_id,
+                session_id=session_id,
+                message={"id": request_id, "role": "user", "text": str(message.get("text") or "")},
+            ))
         session = self.sessions.get(session_id)
         if session is None:
             manager = self._require_session_manager()
@@ -424,7 +502,7 @@ class PeppaAgentServer:
             if state is None:
                 return _event("error", request_id=request_id, message="Hermes session is not loaded. Reopen the conversation or start a new chat.")
             session = PeppaAgentSession(
-                session_id, state.cwd, emit, self.loop or asyncio.get_running_loop(), state, manager, self.acp_agent
+                session_id, state.cwd, self.broadcast, self.loop or asyncio.get_running_loop(), state, manager, self.acp_agent
             )
             self.sessions[session_id] = session
         asyncio.create_task(session.prompt(request_id, str(message.get("text") or "")))
@@ -469,6 +547,13 @@ class PeppaAgentServer:
         if not isinstance(value, str) or not value.strip():
             raise ValueError(f"{key} is required")
         return value.strip()
+
+    def _remember_event(self, event_id: str) -> None:
+        self._seen_event_ids.add(event_id)
+        self._seen_event_order.append(event_id)
+        while len(self._seen_event_order) > 256:
+            expired = self._seen_event_order.popleft()
+            self._seen_event_ids.discard(expired)
 
     def _require_session_manager(self):
         if self.session_manager is None:

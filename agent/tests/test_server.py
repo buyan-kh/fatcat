@@ -1,5 +1,6 @@
 import asyncio
 import threading
+import tempfile
 import time
 import unittest
 from types import SimpleNamespace
@@ -15,6 +16,44 @@ class MissingProviderAgentSession(PeppaAgentSession):
 
 
 class ServerTests(unittest.IsolatedAsyncioTestCase):
+    async def test_two_identified_clients_receive_one_deduplicated_pet_click(self):
+        with tempfile.TemporaryDirectory() as root:
+            socket_path = Path(root) / "fatcat.sock"
+            server = PeppaAgentServer(socket_path, Path(root) / "Hermes")
+            listener = await asyncio.start_unix_server(server.handle_client, path=str(socket_path))
+            async with listener:
+                native_reader, native_writer = await asyncio.open_unix_connection(str(socket_path))
+                electron_reader, electron_writer = await asyncio.open_unix_connection(str(socket_path))
+                native_writer.write(b'{"version":1,"type":"hello","client":"native_pet"}\n')
+                electron_writer.write(b'{"version":1,"type":"hello","client":"electron_chat"}\n')
+                await native_writer.drain()
+                await electron_writer.drain()
+                native_ack = await native_reader.readline()
+                electron_ack = await electron_reader.readline()
+                self.assertIn(b'"type":"hello_ack"', native_ack)
+                self.assertIn(b'"type":"hello_ack"', electron_ack)
+                self.assertIn(b'"type":"conversation_snapshot"', await native_reader.readline())
+                self.assertIn(b'"type":"conversation_snapshot"', await electron_reader.readline())
+
+                click = b'{"version":1,"type":"pet_clicked","event_id":"click-1","pet_id":"primary"}\n'
+                native_writer.write(click)
+                await native_writer.drain()
+                self.assertIn(b'"event_id":"click-1"', await native_reader.readline())
+                self.assertIn(b'"event_id":"click-1"', await electron_reader.readline())
+
+                native_writer.write(click)
+                await native_writer.drain()
+                with self.assertRaises(asyncio.TimeoutError):
+                    await asyncio.wait_for(electron_reader.readline(), timeout=0.03)
+
+                native_writer.close()
+                await native_writer.wait_closed()
+                electron_writer.write(b'{"version":1,"type":"pet_clicked","event_id":"click-2","pet_id":"primary"}\n')
+                await electron_writer.drain()
+                self.assertIn(b'"event_id":"click-2"', await electron_reader.readline())
+                electron_writer.close()
+                await electron_writer.wait_closed()
+
     async def test_provider_control_messages_delegate_to_hermes_bridge(self):
         class FakeBridge:
             def inventory(self):
@@ -131,16 +170,17 @@ class ServerTests(unittest.IsolatedAsyncioTestCase):
                 return state
 
         manager = FakeManager()
-        server = PeppaAgentServer(Path("/tmp/peppa-test.sock"), Path("/tmp/peppa-test-home"))
-        server.session_manager = manager
-        first = await server.handle_message(
-            {"version": 1, "type": "new_session", "request_id": "r1", "conversation_id": "c1", "cwd": "/tmp"},
-            lambda event: None,
-        )
-        loaded = await server.handle_message(
-            {"version": 1, "type": "load_session", "request_id": "r2", "conversation_id": "c1", "session_id": first["session_id"], "cwd": "/tmp"},
-            lambda event: None,
-        )
+        with tempfile.TemporaryDirectory() as root:
+            server = PeppaAgentServer(Path(root) / "agent.sock", Path(root) / "Hermes")
+            server.session_manager = manager
+            first = await server.handle_message(
+                {"version": 1, "type": "new_session", "request_id": "r1", "conversation_id": "c1", "cwd": "/tmp"},
+                lambda event: None,
+            )
+            loaded = await server.handle_message(
+                {"version": 1, "type": "load_session", "request_id": "r2", "conversation_id": "c1", "session_id": first["session_id"], "cwd": "/tmp"},
+                lambda event: None,
+            )
 
         self.assertEqual(first["type"], "session_ready")
         self.assertEqual(loaded["type"], "session_loaded")
