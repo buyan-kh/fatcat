@@ -27,6 +27,14 @@ class LaunchAgentScriptTests(unittest.TestCase):
         self.assertNotIn("Application Support/FatCat/Hermes", script)
         self.assertNotIn("rm -rf", script)
 
+    def test_native_build_registers_the_bundled_agent_before_opening(self):
+        script = (ROOT / "scripts/run-peppa-macos.sh").read_text(encoding="utf-8")
+
+        install = script.index('install-fatcat-launch-agent.sh')
+        launch = script.index('open -a "$APP_BUNDLE"')
+        self.assertLess(install, launch)
+        self.assertIn('FATCAT_AGENT_PATH="$APP_BUNDLE/Contents/Resources/PeppaAgent/PeppaAgent"', script)
+
 
 if __name__ == "__main__":
     unittest.main()
