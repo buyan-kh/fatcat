@@ -35,6 +35,7 @@ export class FatCatService extends EventEmitter {
   private resumeError: string | null = null
   private providers: ProviderSummary[] = []
   private seenHermesEventIds = new Set<string>()
+  private finishedRequestIds = new Set<string>()
   private appearance: AppearancePreference
   private eventChain: Promise<void> = Promise.resolve()
 
@@ -68,6 +69,7 @@ export class FatCatService extends EventEmitter {
     this.messages = []
     this.resumeError = null
     this.activeRequestId = null
+    this.finishedRequestIds.clear()
     this.transport.send({ version: 1, type: 'new_session', request_id: randomUUID(), conversation_id: record.id, cwd: workspace })
     await this.emitSnapshot()
     return record
@@ -81,6 +83,7 @@ export class FatCatService extends EventEmitter {
     this.selectedConversationId = id
     this.messages = []
     this.activeRequestId = null
+    this.finishedRequestIds.clear()
     this.resumeError = null
     if (record.hermesSessionId) {
       this.transport.send({ version: 1, type: 'load_session', request_id: randomUUID(), conversation_id: record.id, session_id: record.hermesSessionId, cwd: record.workspacePath })
@@ -253,6 +256,7 @@ export class FatCatService extends EventEmitter {
         }
         if (event.message.role === 'user') {
           this.activeRequestId = event.message.id
+          this.finishedRequestIds.delete(event.message.id)
           this.retryPrompt = event.message.text
         }
         break
@@ -398,8 +402,20 @@ export class FatCatService extends EventEmitter {
     const details = event.details
     const text = typeof details.text === 'string' ? details.text : event.summary
 
+    if (requestId && this.ignoredRequestIds.has(requestId)) return
+
+    if (event.kind === 'message.started') {
+      if (!event.request_id || (this.activeRequestId && this.activeRequestId !== event.request_id)) return
+      if (this.finishedRequestIds.has(event.request_id)) return
+      this.activeRequestId = event.request_id
+      this.ensureAssistant(event.request_id)
+      return
+    }
+
     if (event.kind === 'message.delta') {
       if (!requestId) return
+      if (this.activeRequestId && this.activeRequestId !== requestId) return
+      if (this.finishedRequestIds.has(requestId)) return
       this.activeRequestId ??= requestId
       const assistant = this.ensureAssistant(requestId)
       assistant.text += text
@@ -407,25 +423,32 @@ export class FatCatService extends EventEmitter {
       return
     }
     if (event.kind === 'message.completed') {
-      if (requestId) {
-        const assistant = this.ensureAssistant(requestId)
-        assistant.isStreaming = false
-        this.activeRequestId = null
-      }
+      if (!requestId || this.activeRequestId !== requestId || this.finishedRequestIds.has(requestId)) return
+      const assistant = [...this.messages].reverse().find((item) => item.role === 'assistant' && item.requestId === requestId)
+      if (!assistant) return
+      assistant.isStreaming = false
+      this.finishedRequestIds.add(requestId)
+      this.activeRequestId = null
+      if (assistant.text) await this.options.repository.update(selected.id, { lastPreview: assistant.text.slice(0, 180) })
       return
     }
     if (event.kind === 'session.state') {
       if (!requestId) return
+      if (this.activeRequestId && this.activeRequestId !== requestId) return
+      if (this.finishedRequestIds.has(requestId) && ['completed', 'failed'].includes(String(details.state))) return
       this.activeRequestId ??= requestId
       this.applyTurnState(requestId, typeof details.state === 'string' ? details.state : event.summary.toLowerCase())
-      if (details.state === 'completed' || details.state === 'failed') this.activeRequestId = null
+      if (details.state === 'completed' || details.state === 'failed') {
+        this.finishedRequestIds.add(requestId)
+        this.activeRequestId = null
+      }
       return
     }
     if (event.kind === 'memory.updated') {
       this.emit('event', { type: 'notice', level: 'info', message: event.summary } satisfies FatCatEvent)
       return
     }
-    if (!requestId) return
+    if (!requestId || (this.activeRequestId && this.activeRequestId !== requestId) || this.finishedRequestIds.has(requestId)) return
     const assistant = this.ensureAssistant(requestId)
     const activityID = event.event_id
     const toolID = typeof details.tool_call_id === 'string'
