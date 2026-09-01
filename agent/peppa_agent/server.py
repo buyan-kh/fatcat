@@ -251,17 +251,32 @@ class _FatCatACPBridge:
 
     async def request_permission(self, options: list[Any], session_id: str, tool_call: Any, **kwargs: Any) -> Any:
         session = self.server.sessions.get(session_id)
+        proposal_id = str(getattr(tool_call, "tool_call_id", session.current_request_id if session else uuid.uuid4()))
+        future = self.server.loop.create_future() if self.server.loop is not None else asyncio.get_running_loop().create_future()
+        self.server.pending_approvals[proposal_id] = future
         if session is not None:
             await session.emit(_hermes_event(
                 "tool.needs_approval",
                 session_id,
-                str(getattr(tool_call, "tool_call_id", session.current_request_id or uuid.uuid4())),
+                proposal_id,
                 str(getattr(tool_call, "title", "native action")),
                 {"risk": "high", "reason": "FatCat Agent requested a native action approval."},
             ))
-        from acp.schema import DeniedOutcome, RequestPermissionResponse
+        try:
+            approved = await asyncio.wait_for(future, timeout=60)
+        except asyncio.TimeoutError:
+            approved = False
+        finally:
+            self.server.pending_approvals.pop(proposal_id, None)
 
-        return RequestPermissionResponse(outcome=DeniedOutcome(outcome="cancelled"))
+        try:
+            from acp.schema import AllowedOutcome, DeniedOutcome, RequestPermissionResponse
+            outcome = AllowedOutcome(option_id="allow_once") if approved else DeniedOutcome(outcome="cancelled")
+            return RequestPermissionResponse(outcome=outcome)
+        except ImportError:
+            from types import SimpleNamespace
+            outcome = SimpleNamespace(option_id="allow_once") if approved else SimpleNamespace(outcome="cancelled")
+            return SimpleNamespace(outcome=outcome)
 
 
 class PeppaAgentServer:
@@ -286,6 +301,7 @@ class PeppaAgentServer:
         self.client_roles: dict[str, str] = {}
         self._seen_event_ids: set[str] = set()
         self._seen_event_order: deque[str] = deque()
+        self.pending_approvals: dict[str, asyncio.Future[bool]] = {}
         self.shutdown_event: asyncio.Event | None = None
         self.allow_shutdown = allow_shutdown if allow_shutdown is not None else os.environ.get("FATCAT_ALLOW_SHUTDOWN") == "1"
 
@@ -518,6 +534,22 @@ class PeppaAgentServer:
             except Exception:
                 LOG.debug("Hermes cancellation interrupt was unavailable", exc_info=True)
             return _event("state", state="stopping", session_id=session_id, request_id=str(message.get("request_id") or uuid.uuid4()))
+        if message_type in {"approve_action", "deny_action"}:
+            proposal_id = self._required_text(message, "proposal_id")
+            future = self.pending_approvals.get(proposal_id)
+            if future is None or future.done():
+                return _event(
+                    "error",
+                    request_id=str(message.get("request_id") or uuid.uuid4()),
+                    message="Unknown or expired approval request.",
+                )
+            future.set_result(message_type == "approve_action")
+            return _event(
+                "approval_ack",
+                request_id=str(message.get("request_id") or uuid.uuid4()),
+                proposal_id=proposal_id,
+                approved=message_type == "approve_action",
+            )
         if message_type in {
             "provider_inventory",
             "provider_models",

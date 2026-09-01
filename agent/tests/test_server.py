@@ -414,6 +414,41 @@ class ServerTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(acp_agent.calls, [("hello", "session-1")])
 
+    async def test_permission_request_waits_for_explicit_fatcat_decision(self):
+        events = []
+
+        async def emit(event):
+            events.append(event)
+
+        server = PeppaAgentServer(Path("/tmp/peppa-test.sock"), Path("/tmp/peppa-test-home"))
+        session = PeppaAgentSession("session-1", ".", emit, asyncio.get_running_loop())
+        server.sessions["session-1"] = session
+        bridge = _FatCatACPBridge(server)
+        permission = asyncio.create_task(bridge.request_permission(
+            [], "session-1", SimpleNamespace(tool_call_id="proposal-1", title="Send email to Sarah")
+        ))
+        await asyncio.sleep(0)
+
+        self.assertEqual(events[0]["kind"], "tool.needs_approval")
+        self.assertEqual(events[0]["request_id"], "proposal-1")
+        response = await server.handle_message(
+            {"version": 1, "type": "approve_action", "request_id": "approval-1", "proposal_id": "proposal-1"},
+            lambda event: None,
+        )
+
+        self.assertEqual(response["type"], "approval_ack")
+        self.assertTrue((await permission).outcome.option_id == "allow_once")
+
+    async def test_unknown_approval_id_is_denied_without_resuming_hermes(self):
+        server = PeppaAgentServer(Path("/tmp/peppa-test.sock"), Path("/tmp/peppa-test-home"))
+        response = await server.handle_message(
+            {"version": 1, "type": "approve_action", "request_id": "approval-1", "proposal_id": "missing"},
+            lambda event: None,
+        )
+
+        self.assertEqual(response["type"], "error")
+        self.assertIn("approval", response["message"].lower())
+
 
 if __name__ == "__main__":
     unittest.main()

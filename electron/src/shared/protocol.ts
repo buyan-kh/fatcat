@@ -20,6 +20,8 @@ const providerSetDefault = z.object({ ...base, type: z.literal('provider_set_def
 const providerSetCredentialRef = z.object({ ...base, type: z.literal('provider_set_credential_ref'), request_id: id, provider_id: id, credential_ref: id }).strict()
 const providerSetBaseUrl = z.object({ ...base, type: z.literal('provider_set_base_url'), request_id: id, provider_id: id, base_url: z.string() }).strict()
 const providerValidate = z.object({ ...base, type: z.literal('provider_validate'), request_id: id, provider_id: id, model: id }).strict()
+const approveAction = z.object({ ...base, type: z.literal('approve_action'), request_id: id, proposal_id: id }).strict()
+const denyAction = z.object({ ...base, type: z.literal('deny_action'), request_id: id, proposal_id: id }).strict()
 const shutdown = z.object({ ...base, type: z.literal('shutdown') }).strict()
 
 export const clientCommandSchema = z.discriminatedUnion('type', [
@@ -38,6 +40,8 @@ export const clientCommandSchema = z.discriminatedUnion('type', [
   providerSetCredentialRef,
   providerSetBaseUrl,
   providerValidate,
+  approveAction,
+  denyAction,
   shutdown,
 ])
 
@@ -48,7 +52,6 @@ const conversationRecord = z.object({
   title: z.string(),
   workspace_path: z.string(),
   session_id: id.nullable(),
-  messages: z.array(messageRecord),
 }).strict()
 const petClicked = z.object({ ...base, type: z.literal('pet_clicked'), event_id: id, pet_id: id, conversation_id: id.nullable().optional() }).strict()
 const conversationSnapshot = z.object({ ...base, type: z.literal('conversation_snapshot'), selected_id: id.nullable(), records: z.array(conversationRecord) }).strict()
@@ -74,6 +77,7 @@ const providerValidationResult = z.object({ ...base, type: z.literal('provider_v
 const memoryUpdate = z.object({ ...base, type: z.literal('memory_update'), session_id: id, detail: z.string() }).strict()
 const errorEvent = z.object({ ...base, type: z.literal('error'), request_id: optionalRequestId, message: z.string() }).strict()
 const shutdownAck = z.object({ ...base, type: z.literal('shutdown_ack') }).strict()
+const approvalAck = z.object({ ...base, type: z.literal('approval_ack'), request_id: id, proposal_id: id, approved: z.boolean() }).strict()
 
 const v1AgentEventSchema = z.discriminatedUnion('type', [
   helloAck,
@@ -100,6 +104,7 @@ const v1AgentEventSchema = z.discriminatedUnion('type', [
   memoryUpdate,
   errorEvent,
   shutdownAck,
+  approvalAck,
 ])
 
 export const hermesEventKinds = [

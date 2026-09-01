@@ -35,20 +35,18 @@ public struct FatCatIPCConversationRecord: Codable, Equatable, Sendable {
     public let title: String
     public let workspacePath: String
     public let sessionID: String?
-    public let messages: [FatCatIPCMessageRecord]
 
     enum CodingKeys: String, CodingKey {
-        case id, title, messages
+        case id, title
         case workspacePath = "workspace_path"
         case sessionID = "session_id"
     }
 
-    public init(id: String, title: String, workspacePath: String, sessionID: String?, messages: [FatCatIPCMessageRecord]) {
+    public init(id: String, title: String, workspacePath: String, sessionID: String?) {
         self.id = id
         self.title = title
         self.workspacePath = workspacePath
         self.sessionID = sessionID
-        self.messages = messages
     }
 }
 

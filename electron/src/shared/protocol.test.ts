@@ -9,7 +9,7 @@ describe('FatCat socket protocol', () => {
       version: 1,
       type: 'conversation_snapshot',
       selected_id: 'c1',
-      records: [{ id: 'c1', title: 'First', workspace_path: '/tmp', session_id: 's1', messages: [] }],
+      records: [{ id: 'c1', title: 'First', workspace_path: '/tmp', session_id: 's1' }],
     },
     {
       version: 1,
@@ -78,5 +78,12 @@ describe('FatCat socket protocol', () => {
     expect(
       encodeClientCommand({ version: 1, type: 'pet_clicked', event_id: 'click-1', pet_id: 'primary', conversation_id: 'c1' }),
     ).toContain('"type":"pet_clicked"')
+  })
+
+  it('encodes explicit one-shot approval decisions', () => {
+    expect(encodeClientCommand({ version: 1, type: 'approve_action', request_id: 'r1', proposal_id: 'p1' })).toBe(
+      '{"version":1,"type":"approve_action","request_id":"r1","proposal_id":"p1"}\n',
+    )
+    expect(encodeClientCommand({ version: 1, type: 'deny_action', request_id: 'r2', proposal_id: 'p1' })).toContain('deny_action')
   })
 })

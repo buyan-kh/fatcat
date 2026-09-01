@@ -9,8 +9,7 @@ struct PeppaIPCTests {
             id: "c1",
             title: "First",
             workspacePath: "/tmp",
-            sessionID: "s1",
-            messages: [message]
+            sessionID: "s1"
         )
         let messages: [PeppaIPCMessage] = [
             .clientHello(client: "native_pet"),

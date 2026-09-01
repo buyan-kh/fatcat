@@ -2128,7 +2128,7 @@ final class PetWindowController: NSObject, NSWindowDelegate {
                     title: record.title,
                     createdAt: now,
                     updatedAt: now,
-                    lastPreview: record.messages.last?.text ?? "",
+                    lastPreview: "",
                     workspacePath: record.workspacePath
                 )
             }
@@ -2140,13 +2140,7 @@ final class PetWindowController: NSObject, NSWindowDelegate {
                 model.replaceMessages([])
                 return
             }
-            model.replaceMessages(selected.messages.map { message in
-                ChatMessage(
-                    id: UUID(uuidString: message.id) ?? UUID(),
-                    role: message.role == "user" ? .user : (message.role == "assistant" ? .assistant : .system),
-                    text: message.text
-                )
-            })
+            model.replaceMessages([])
             if let sessionID = selected.sessionID, activeSessionID != sessionID {
                 activeSessionID = sessionID
                 agent.loadSession(conversationID: selected.id, sessionID: sessionID, cwd: selected.workspacePath)
