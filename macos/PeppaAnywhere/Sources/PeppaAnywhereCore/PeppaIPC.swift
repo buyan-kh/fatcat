@@ -52,6 +52,32 @@ public struct FatCatIPCConversationRecord: Codable, Equatable, Sendable {
     }
 }
 
+public struct FatCatHermesEvent: Codable, Equatable, Sendable {
+    public let eventID: String
+    public let kind: String
+    public let sessionID: String
+    public let requestID: String?
+    public let summary: String
+    public let details: [String: String]
+
+    enum CodingKeys: String, CodingKey {
+        case eventID = "event_id"
+        case kind
+        case sessionID = "session_id"
+        case requestID = "request_id"
+        case summary, details
+    }
+
+    public init(eventID: String, kind: String, sessionID: String, requestID: String?, summary: String, details: [String: String]) {
+        self.eventID = eventID
+        self.kind = kind
+        self.sessionID = sessionID
+        self.requestID = requestID
+        self.summary = summary
+        self.details = details
+    }
+}
+
 public enum PeppaIPCMessage: Equatable, Sendable {
     case hello
     case clientHello(client: String)
@@ -93,6 +119,7 @@ public enum PeppaIPCMessage: Equatable, Sendable {
     case actionResult(requestID: String, success: Bool, detail: String)
     case verificationResult(requestID: String, success: Bool, detail: String)
     case memoryUpdate(sessionID: String, detail: String)
+    case hermesEvent(FatCatHermesEvent)
     case error(requestID: String?, message: String)
     case shutdown
     case shutdownAck
@@ -128,6 +155,23 @@ public enum PeppaIPCCodec {
         guard let dictionary = object as? [String: Any] else { throw PeppaIPCError.malformed("message must be an object") }
         try rejectCredentials(in: dictionary)
         guard let version = dictionary["version"] as? Int else { throw PeppaIPCError.malformed("missing version") }
+        if version == 2 {
+            guard let kind = dictionary["kind"] as? String,
+                  let eventID = dictionary["event_id"] as? String,
+                  let sessionID = dictionary["session_id"] as? String,
+                  let summary = dictionary["summary"] as? String,
+                  let details = dictionary["details"] as? [String: String] else {
+                throw PeppaIPCError.malformed("invalid Hermes event")
+            }
+            return .hermesEvent(FatCatHermesEvent(
+                eventID: eventID,
+                kind: kind,
+                sessionID: sessionID,
+                requestID: dictionary["request_id"] as? String,
+                summary: summary,
+                details: details,
+            ))
+        }
         guard version == 1 else { throw PeppaIPCError.unsupportedVersion(version) }
         guard let type = dictionary["type"] as? String else { throw PeppaIPCError.malformed("missing type") }
         func string(_ key: String) throws -> String {
@@ -258,6 +302,17 @@ public enum PeppaIPCCodec {
         case let .actionResult(requestID, success, detail): return ["version": 1, "type": "action_result", "request_id": requestID, "success": success, "detail": detail]
         case let .verificationResult(requestID, success, detail): return ["version": 1, "type": "verification_result", "request_id": requestID, "success": success, "detail": detail]
         case let .memoryUpdate(sessionID, detail): return ["version": 1, "type": "memory_update", "session_id": sessionID, "detail": detail]
+        case let .hermesEvent(event):
+            var value: [String: Any] = [
+                "version": 2,
+                "event_id": event.eventID,
+                "kind": event.kind,
+                "session_id": event.sessionID,
+                "summary": event.summary,
+                "details": event.details,
+            ]
+            if let requestID = event.requestID { value["request_id"] = requestID }
+            return value
         case let .error(requestID, message): return ["version": 1, "type": "error", "request_id": requestID ?? NSNull(), "message": message]
         case .shutdown: return ["version": 1, "type": "shutdown"]
         case .shutdownAck: return ["version": 1, "type": "shutdown_ack"]

@@ -2201,6 +2201,20 @@ final class PetWindowController: NSObject, NSWindowDelegate {
         case let .memoryUpdate(sessionID, detail):
             guard isActiveSession(sessionID) else { return }
             model.appendSystem("Memory updated: \(detail)")
+        case let .hermesEvent(event):
+            guard isActiveSession(event.sessionID) else { return }
+            model.appendSystem(event.summary)
+            switch event.kind {
+            case "message.started", "message.delta": model.handleLife(.hermes(.thought))
+            case "message.completed": model.handleLife(.hermes(.turnCompleted))
+            case "tool.started", "tool.progress": model.handleLife(.hermes(.toolCall(name: event.details["tool"] ?? "")))
+            case "tool.needs_approval", "native_action.approval_requested": model.handleLife(.hermes(.permissionRequested))
+            case "tool.completed", "native_action.result": model.handleLife(.hermes(.actionSucceeded))
+            case "tool.failed": model.handleLife(.hermes(.actionFailed))
+            case "verification.completed": model.handleLife(.hermes(event.details["success"] == "true" ? .verifiedSuccess : .verifiedFailure))
+            case "memory.updated": break
+            default: break
+            }
         case let .state(state):
             handleAgentState(state)
         case let .sessionState(state, sessionID, requestID):

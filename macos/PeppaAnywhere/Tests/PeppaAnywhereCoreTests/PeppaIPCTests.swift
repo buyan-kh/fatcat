@@ -108,6 +108,19 @@ struct PeppaIPCTests {
         }
     }
 
+    @Test func roundTripsGenericHermesEvents() throws {
+        let event = FatCatHermesEvent(
+            eventID: "event-1",
+            kind: "tool.needs_approval",
+            sessionID: "session-1",
+            requestID: "request-1",
+            summary: "Send email to Sarah",
+            details: ["tool": "send_email", "risk": "high"]
+        )
+
+        #expect(try PeppaIPCCodec.decodeLine(PeppaIPCCodec.encode(message: .hermesEvent(event))) == .hermesEvent(event))
+    }
+
     @Test func roundTripsConversationLifecycleAndCancellation() throws {
         let messages: [PeppaIPCMessage] = [
             .newSession(requestID: "r1", conversationID: "c1", cwd: "/Users/me/Code"),

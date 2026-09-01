@@ -35,7 +35,7 @@ describe('FatCat socket protocol', () => {
   })
 
   it('rejects unsupported protocol versions', () => {
-    expect(() => decodeAgentEvent('{"version":2,"type":"hello_ack","agent_version":"x"}')).toThrow(
+    expect(() => decodeAgentEvent('{"version":3,"type":"hello_ack","agent_version":"x"}')).toThrow(
       'Unsupported protocol version',
     )
   })

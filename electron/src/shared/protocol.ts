@@ -75,7 +75,7 @@ const memoryUpdate = z.object({ ...base, type: z.literal('memory_update'), sessi
 const errorEvent = z.object({ ...base, type: z.literal('error'), request_id: optionalRequestId, message: z.string() }).strict()
 const shutdownAck = z.object({ ...base, type: z.literal('shutdown_ack') }).strict()
 
-export const agentEventSchema = z.discriminatedUnion('type', [
+const v1AgentEventSchema = z.discriminatedUnion('type', [
   helloAck,
   petClicked,
   conversationSnapshot,
@@ -102,6 +102,41 @@ export const agentEventSchema = z.discriminatedUnion('type', [
   shutdownAck,
 ])
 
+export const hermesEventKinds = [
+  'message.started',
+  'message.delta',
+  'message.completed',
+  'tool.started',
+  'tool.progress',
+  'tool.needs_approval',
+  'tool.completed',
+  'tool.failed',
+  'native_action.proposed',
+  'native_action.approval_requested',
+  'native_action.result',
+  'verification.completed',
+  'session.state',
+  'session.error',
+  'memory.updated',
+] as const
+
+const hermesEventDetails = z.record(
+  z.string(),
+  z.union([z.string(), z.number(), z.boolean(), z.null(), z.array(z.string())]),
+)
+
+export const hermesEventSchema = z.object({
+  version: z.literal(2),
+  event_id: id,
+  kind: z.enum(hermesEventKinds),
+  session_id: id,
+  request_id: optionalRequestId,
+  summary: z.string().min(1),
+  details: hermesEventDetails,
+}).strict()
+
+export const agentEventSchema = z.union([v1AgentEventSchema, hermesEventSchema])
+
 export type ClientCommand = z.infer<typeof clientCommandSchema>
 export type AgentEvent = z.infer<typeof agentEventSchema>
 
@@ -127,7 +162,7 @@ export function decodeAgentEvent(line: string): AgentEvent {
     throw new Error('Invalid agent event: malformed JSON')
   }
   assertNoCredentials(value)
-  if (value && typeof value === 'object' && 'version' in value && value.version !== 1) {
+  if (value && typeof value === 'object' && 'version' in value && value.version !== 1 && value.version !== 2) {
     throw new Error(`Unsupported protocol version: ${String(value.version)}`)
   }
   const result = agentEventSchema.safeParse(value)
