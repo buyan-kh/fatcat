@@ -53,7 +53,7 @@ export function AppSidebar({
   }, [conversations, query])
 
   return (
-    <aside className={cn('flex h-full shrink-0 flex-col border-r bg-muted/35 transition-[width] duration-200', collapsed ? 'w-[68px]' : 'w-64')}>
+    <aside className={cn('hairline flex h-full shrink-0 flex-col border-r bg-muted/25 transition-[width] duration-200', collapsed ? 'w-[68px]' : 'w-64')}>
       <div className="app-drag flex h-12 items-center gap-2 px-3 pl-[72px]">
         {!collapsed && <h1 className="text-sm font-semibold tracking-[-0.01em]">FatCat</h1>}
         <Button className="app-no-drag ml-auto" variant="ghost" size="icon-sm" aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'} onClick={onToggle}>
@@ -62,8 +62,8 @@ export function AppSidebar({
       </div>
 
       <div className="px-2.5 pb-2">
-        <Button className={cn('w-full justify-start shadow-none', collapsed && 'justify-center px-0')} variant="outline" onClick={onNewChat} aria-label="New chat">
-          <Plus className="size-4" weight="bold" />
+        <Button className={cn('nav-control surface-card w-full justify-start shadow-none', collapsed && 'justify-center px-0')} variant="outline" onClick={onNewChat} aria-label="New chat">
+          <Plus className="size-4" />
           {!collapsed && <span>New chat</span>}
         </Button>
       </div>
@@ -77,7 +77,7 @@ export function AppSidebar({
             placeholder="Search chats"
             value={query}
             onChange={(event) => setQuery(event.target.value)}
-            className="h-8 border-transparent bg-transparent pl-8 text-xs shadow-none hover:bg-background/60 focus-visible:border-border"
+            className="nav-control border-input bg-background/70 pl-8 text-xs shadow-sm hover:bg-background focus-visible:border-border"
           />
         </div>
       )}
@@ -87,10 +87,10 @@ export function AppSidebar({
           <div className="space-y-0.5 pb-3">
             {visible.length === 0 && <p className="px-2 py-8 text-center text-xs text-muted-foreground">No chats found</p>}
             {visible.map((conversation) => (
-              <div key={conversation.id} className={cn('group flex items-center rounded-md', selectedId === conversation.id ? 'bg-accent' : 'hover:bg-accent/70')}>
+              <div key={conversation.id} className={cn('group flex min-h-9 items-center rounded-[10px]', selectedId === conversation.id ? 'bg-accent' : 'hover:bg-accent/70')}>
                 <button
                   type="button"
-                  className="min-w-0 flex-1 rounded-md px-2 py-2 text-left outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  className="min-w-0 flex-1 rounded-[10px] px-2 py-2 text-left outline-none focus-visible:ring-2 focus-visible:ring-ring"
                   aria-label={`${conversation.title}. ${conversation.lastPreview}`}
                   onClick={() => onSelect(conversation.id)}
                 >
@@ -100,7 +100,7 @@ export function AppSidebar({
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
                     <Button variant="ghost" size="icon-xs" aria-label={`Actions for ${conversation.title}`} className="mr-1 opacity-0 group-hover:opacity-100 data-[state=open]:opacity-100">
-                      <DotsThree className="size-4" weight="bold" />
+                      <DotsThree className="size-4" />
                     </Button>
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="end" className="w-36">
@@ -114,8 +114,8 @@ export function AppSidebar({
         )}
       </ScrollArea>
 
-      <div className="border-t p-2">
-        <Button variant="ghost" className={cn('w-full justify-start px-2', collapsed && 'justify-center')} onClick={onOpenSettings} aria-label="Settings">
+      <div className="hairline border-t p-2">
+        <Button variant="ghost" className={cn('nav-control w-full justify-start px-2', collapsed && 'justify-center')} onClick={onOpenSettings} aria-label="Settings">
           <GearSix className="size-4" />
           {!collapsed && <span className="flex-1 text-left">Settings</span>}
           {!collapsed && <span className={cn('size-1.5 rounded-full', connection.phase === 'connected' ? 'bg-emerald-500' : 'bg-muted-foreground')} aria-hidden />}

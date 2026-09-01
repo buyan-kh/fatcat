@@ -32,6 +32,8 @@ describe('application shell', () => {
     )
 
     expect(screen.getByRole('heading', { name: 'FatCat' })).toBeInTheDocument()
+    expect(screen.getByRole('searchbox', { name: 'Search chats' })).toHaveClass('nav-control')
+    expect(screen.getByRole('button', { name: 'New chat' })).toHaveClass('nav-control')
     await user.click(screen.getByRole('button', { name: 'New chat' }))
     expect(onNewChat).toHaveBeenCalled()
     await user.click(screen.getByRole('button', { name: /^Second idea\./ }))
