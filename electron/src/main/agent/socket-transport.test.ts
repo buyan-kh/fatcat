@@ -49,6 +49,30 @@ describe('SocketTransport', () => {
     await vi.waitFor(() => expect(diagnostics).toEqual(['Agent sent an invalid protocol event.']))
   })
 
+  it('reconnects and handshakes again after an unexpected disconnect', async () => {
+    transport = new SocketTransport(agent.socketPath, { handshakeTimeoutMs: 500, reconnectDelayMs: 10 })
+    await transport.connect()
+
+    agent.disconnect()
+
+    await vi.waitFor(() => expect(agent.commands.filter((command) => command.type === 'hello')).toHaveLength(2))
+    await vi.waitFor(() => expect(transport?.isConnected).toBe(true))
+  })
+
+  it('drops a partial frame before reconnecting', async () => {
+    transport = new SocketTransport(agent.socketPath, { handshakeTimeoutMs: 500, reconnectDelayMs: 10 })
+    const diagnostics: string[] = []
+    transport.on('diagnostic', (value) => diagnostics.push(value))
+    await transport.connect()
+
+    agent.sendRaw('{"version":1,"type":"assistant_delta"')
+    agent.disconnect()
+
+    await vi.waitFor(() => expect(agent.commands.filter((command) => command.type === 'hello')).toHaveLength(2))
+    await vi.waitFor(() => expect(transport?.isConnected).toBe(true))
+    expect(diagnostics).toEqual([])
+  })
+
   it('rejects writes while disconnected', () => {
     transport = new SocketTransport(agent.socketPath)
     expect(() => transport!.send({ version: 1, type: 'shutdown' })).toThrow('not connected')

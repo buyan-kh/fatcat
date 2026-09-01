@@ -24,7 +24,11 @@
 	<true/>
 	<key>NSHighResolutionCapable</key>
 	<true/>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>FatCat uses the microphone only while you hold a voice conversation with your pet.</string>
 	<key>NSScreenCaptureUsageDescription</key>
 	<string>FatCat uses Screen Recording permission to understand local screen context without retaining raw screenshots.</string>
+	<key>NSSpeechRecognitionUsageDescription</key>
+	<string>FatCat converts your spoken question to text so it can answer in the shared conversation.</string>
 </dict>
 </plist>

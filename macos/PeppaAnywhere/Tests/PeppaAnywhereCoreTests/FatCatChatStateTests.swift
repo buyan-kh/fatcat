@@ -121,6 +121,20 @@ struct FatCatChatStateTests {
         #expect(FatCatSessionResolution.failedResume(for: store.records[0]) == .showFailure(sessionID: "saved-session"))
     }
 
+    @Test func sharedSnapshotReplacesTheLocalConversationCache() throws {
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString).appendingPathExtension("json")
+        defer { try? FileManager.default.removeItem(at: url) }
+        let store = try FatCatConversationStore(fileURL: url)
+        _ = try store.create(title: "Stale", workspacePath: "/tmp")
+        let shared = FatCatConversationRecord(id: "c1", hermesSessionID: "s1", title: "Shared", workspacePath: "/tmp/shared")
+
+        try store.replace(records: [shared], selectedID: "c1")
+
+        let reopened = try FatCatConversationStore(fileURL: url)
+        #expect(reopened.selectedID == "c1")
+        #expect(reopened.records == [shared])
+    }
+
     @Test func retryStateKeepsTheMostRecentlySubmittedPrompt() {
         var retry = FatCatRetryState()
         #expect(retry.promptForRetry == nil)

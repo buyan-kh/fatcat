@@ -36,5 +36,7 @@ fi
 
 "$SCRIPT_DIR/verify-peppa-macos-app.sh" "$APP_BUNDLE"
 "$SCRIPT_DIR/package-peppa-dmg.sh" "$APP_BUNDLE"
+FATCAT_AGENT_PATH="$APP_BUNDLE/Contents/Resources/PeppaAgent/PeppaAgent" \
+  "$SCRIPT_DIR/install-fatcat-launch-agent.sh"
 open -a "$APP_BUNDLE"
 echo "Launched $APP_BUNDLE"

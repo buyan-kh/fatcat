@@ -40,7 +40,7 @@ describe('FatCatService', () => {
 
     await service.sendMessage('Hello Hermes')
     const turn = transport.commands.at(-1)
-    expect(turn).toMatchObject({ type: 'user_message', session_id: 's1', text: 'Hello Hermes' })
+    expect(turn).toMatchObject({ type: 'user_message', conversation_id: record.id, session_id: 's1', text: 'Hello Hermes' })
     expect((await service.snapshot()).messages.at(-1)).toMatchObject({ role: 'user', text: 'Hello Hermes' })
 
     transport.event({ version: 1, type: 'assistant_delta', request_id: requestId(turn!), session_id: 's1', text: 'Hello ' })
@@ -95,6 +95,35 @@ describe('FatCatService', () => {
     if (!workspace) throw new Error('Expected a workspace')
     const record = await service.createConversation(workspace)
     expect(record.workspacePath).toBe('/tmp/chosen-workspace')
+  })
+
+  it('uses shared agent snapshots and renders messages sent by the native pet', async () => {
+    transport.event({
+      version: 1,
+      type: 'conversation_snapshot',
+      selected_id: 'c1',
+      records: [{ id: 'c1', title: 'Shared', workspace_path: '/tmp', session_id: 's1', messages: [] }],
+    })
+    await vi.waitFor(async () => expect((await service.snapshot()).selectedId).toBe('c1'))
+
+    transport.event({
+      version: 1,
+      type: 'message_added',
+      conversation_id: 'c1',
+      session_id: 's1',
+      message: { id: 'native-request', role: 'user', text: 'From the pet' },
+    })
+    transport.event({ version: 1, type: 'assistant_delta', request_id: 'native-request', conversation_id: 'c1', session_id: 's1', text: 'Shared reply' })
+    transport.event({ version: 1, type: 'state', state: 'completed', conversation_id: 'c1', session_id: 's1', request_id: 'native-request' })
+
+    await vi.waitFor(async () => {
+      const snapshot = await service.snapshot()
+      expect(snapshot.messages.map(({ role, text }) => ({ role, text }))).toEqual([
+        { role: 'user', text: 'From the pet' },
+        { role: 'assistant', text: 'Shared reply' },
+      ])
+      expect(snapshot.isGenerating).toBe(false)
+    })
   })
 })
 

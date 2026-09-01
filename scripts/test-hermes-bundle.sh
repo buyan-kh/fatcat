@@ -46,7 +46,7 @@ if [[ -n "$developer_path_matches" ]]; then
 fi
 socket="$test_parent/agent.sock"
 home="$test_parent/hermes-home"
-"$stage/PeppaAgent" --socket "$socket" --hermes-home "$home" >/dev/null 2>&1 &
+FATCAT_ALLOW_SHUTDOWN=1 "$stage/PeppaAgent" --socket "$socket" --hermes-home "$home" >/dev/null 2>&1 &
 agent_pid=$!
 for _ in $(seq 1 50); do
   [[ -S "$socket" ]] && break
@@ -68,8 +68,10 @@ def request(payload):
     client.sendall((json.dumps(payload, separators=(",", ":")) + "\n").encode())
     return json.loads(reader.readline())
 
-hello = request({"version": 1, "type": "hello"})
+hello = request({"version": 1, "type": "hello", "client": "native_pet"})
 assert hello["type"] == "hello_ack"
+snapshot = json.loads(reader.readline())
+assert snapshot["type"] == "conversation_snapshot"
 inventory = request({"version": 1, "type": "provider_inventory", "request_id": "inventory"})
 assert [row["slug"] for row in inventory["providers"]] == ["openai-codex", "openai-api", "anthropic"]
 assert all("api_key" not in row and "secret" not in row for row in inventory["providers"])

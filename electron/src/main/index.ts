@@ -1,49 +1,29 @@
-import { EventEmitter } from 'node:events'
-import { existsSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { app, BrowserWindow, dialog, ipcMain, nativeTheme, screen, shell } from 'electron'
-import { AgentSupervisor } from './agent/agent-supervisor'
 import { FatCatService } from './agent/fatcat-service'
+import { SocketTransport } from './agent/socket-transport'
 import { ConversationRepository } from './persistence/conversations'
 import { WindowStateStore, type DisplayBounds } from './window-state'
 import { FATCAT_EVENT_CHANNEL, FATCAT_INVOKE_CHANNELS } from '../shared/api'
 import type { AppearancePreference } from '../shared/chat'
-import type { ClientCommand } from '../shared/protocol'
-
-class OfflineTransport extends EventEmitter {
-  readonly isConnected = false
-  send(_command: ClientCommand): void { throw new Error('FatCat Agent is not connected') }
-}
 
 let mainWindow: BrowserWindow | null = null
-let supervisor: AgentSupervisor | null = null
+let transport: SocketTransport | null = null
 let service: FatCatService | null = null
 let windowState: WindowStateStore | null = null
 let quitting = false
 
 async function bootstrap(): Promise<void> {
   const userData = app.getPath('userData')
-  const agentPath = resolveAgentPath()
-  supervisor = new AgentSupervisor({
-    agentPath,
-    socketPath: join(userData, 'runtime', 'fatcat-electron-agent.sock'),
-    hermesHome: process.env.FATCAT_HERMES_PATH || join(userData, 'Hermes'),
-  })
-  const repository = await ConversationRepository.open(join(userData, 'conversations.json'))
+  const socketPath = process.env.FATCAT_AGENT_SOCKET || join(app.getPath('home'), 'Library', 'Application Support', 'FatCat', 'runtime', 'fatcat-agent.sock')
+  const sharedTransport = new SocketTransport(socketPath)
+  transport = sharedTransport
+  const repository = await ConversationRepository.open(join(userData, 'electron-conversations-cache.json'))
   windowState = await WindowStateStore.open(join(userData, 'window.json'))
-
-  let transport
-  let startupError: string | null = null
-  try {
-    transport = await supervisor.start()
-  } catch (error) {
-    startupError = errorMessage(error)
-    transport = new OfflineTransport()
-  }
 
   service = new FatCatService({
     repository,
-    transport,
+    transport: sharedTransport,
     defaultWorkspace: app.isPackaged ? process.env.HOME : resolve(app.getAppPath(), '..'),
     chooseWorkspace: async () => {
       const options: Electron.OpenDialogOptions = { properties: ['openDirectory', 'createDirectory'] }
@@ -52,12 +32,22 @@ async function bootstrap(): Promise<void> {
         : await dialog.showOpenDialog(options)
       return result.canceled ? null : result.filePaths[0] ?? null
     },
-    diagnostics: async () => supervisor!.getDiagnostics(),
-    restartAgent: async () => supervisor!.restart(),
+    diagnostics: async () => ({ agentPath: 'LaunchAgent com.fatcat.agent', socketPath, running: sharedTransport.isConnected, lines: [] }),
+    restartAgent: async () => {
+      sharedTransport.close()
+      await sharedTransport.connect()
+      return sharedTransport
+    },
   })
   service.on('event', (event) => mainWindow?.webContents.send(FATCAT_EVENT_CHANNEL, event))
+  let startupError: string | null = null
+  try {
+    await sharedTransport.connect()
+  } catch (error) {
+    startupError = errorMessage(error)
+  }
   if (startupError) {
-    queueMicrotask(() => transport.emit('status', { phase: 'failed', detail: startupError }))
+    queueMicrotask(() => sharedTransport.emit('status', { phase: 'failed', detail: startupError }))
   }
 
   registerIpc(service)
@@ -137,14 +127,6 @@ export function isSafeExternalUrl(value: string): boolean {
   }
 }
 
-function resolveAgentPath(): string {
-  if (process.env.FATCAT_AGENT_PATH) return process.env.FATCAT_AGENT_PATH
-  const candidates = app.isPackaged
-    ? [join(process.resourcesPath, 'PeppaAgent', 'PeppaAgent')]
-    : [resolve(app.getAppPath(), '..', 'agent', 'peppa_agent', 'PeppaAgent')]
-  return candidates.find(existsSync) ?? candidates[0]!
-}
-
 app.whenReady().then(bootstrap).catch((error) => {
   dialog.showErrorBox('FatCat could not start', errorMessage(error))
 })
@@ -158,11 +140,10 @@ app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit()
 })
 
-app.on('before-quit', (event) => {
+app.on('before-quit', () => {
   if (quitting) return
-  event.preventDefault()
   quitting = true
-  void supervisor?.stop().finally(() => app.quit())
+  transport?.close()
 })
 
 function errorMessage(error: unknown): string {

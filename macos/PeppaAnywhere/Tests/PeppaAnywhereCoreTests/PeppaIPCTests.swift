@@ -3,6 +3,27 @@ import Testing
 @testable import PeppaAnywhereCore
 
 struct PeppaIPCTests {
+    @Test func roundTripsSharedClientAndConversationEvents() throws {
+        let message = FatCatIPCMessageRecord(id: "m1", role: "user", text: "Hello")
+        let record = FatCatIPCConversationRecord(
+            id: "c1",
+            title: "First",
+            workspacePath: "/tmp",
+            sessionID: "s1",
+            messages: [message]
+        )
+        let messages: [PeppaIPCMessage] = [
+            .clientHello(client: "native_pet"),
+            .petClicked(eventID: "click-1", petID: "primary", conversationID: "c1"),
+            .conversationSnapshot(selectedID: "c1", records: [record]),
+            .messageAdded(conversationID: "c1", sessionID: "s1", message: message)
+        ]
+
+        for message in messages {
+            #expect(try PeppaIPCCodec.decodeLine(PeppaIPCCodec.encode(message: message)) == message)
+        }
+    }
+
     @Test func providerSetupMessagesRoundTripWithoutRawCredentials() throws {
         let messages: [PeppaIPCMessage] = [
             .providerInventory(requestID: "inventory-1"),
@@ -33,6 +54,7 @@ struct PeppaIPCTests {
     @Test func encodesTypedMessagesAsOneNewlineDelimitedRecord() throws {
         let message = PeppaIPCMessage.userMessage(
             requestID: "request-1",
+            conversationID: "conversation-1",
             sessionID: "session-1",
             text: "What is open?"
         )
@@ -90,6 +112,8 @@ struct PeppaIPCTests {
         let messages: [PeppaIPCMessage] = [
             .newSession(requestID: "r1", conversationID: "c1", cwd: "/Users/me/Code"),
             .loadSession(requestID: "r2", conversationID: "c1", sessionID: "s1", cwd: "/Users/me/Code"),
+            .conversationRename(requestID: "r4", conversationID: "c1", title: "Renamed"),
+            .conversationDelete(requestID: "r5", conversationID: "c1"),
             .listSessions(requestID: "r0", cwd: nil),
             .sessionReady(requestID: "r1", conversationID: "c1", sessionID: "s1"),
             .sessionLoaded(requestID: "r2", conversationID: "c1", sessionID: "s1"),

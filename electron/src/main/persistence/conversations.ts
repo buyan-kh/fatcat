@@ -55,6 +55,14 @@ export class ConversationRepository {
     return structuredClone(this.document)
   }
 
+  async replace(snapshot: ConversationSnapshot): Promise<void> {
+    documentSchema.parse(snapshot)
+    await this.mutate((document) => {
+      document.selectedId = snapshot.selectedId
+      document.records = structuredClone(snapshot.records)
+    })
+  }
+
   async create(title: string, workspacePath: string): Promise<ConversationRecord> {
     const normalizedTitle = title.trim()
     if (!normalizedTitle) throw new Error('Conversation title is required')

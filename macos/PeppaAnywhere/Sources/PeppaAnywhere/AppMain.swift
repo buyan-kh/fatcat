@@ -1,11 +1,13 @@
 import AppKit
 import ApplicationServices
+import AVFoundation
 import Combine
 import CoreGraphics
 import CoreMedia
 import Foundation
 import PeppaAnywhereCore
 import ScreenCaptureKit
+import Speech
 import SwiftUI
 import Vision
 import WebKit
@@ -213,6 +215,13 @@ final class PetModel: ObservableObject {
     @Published var focusComposerToken = 0
     @Published var flightCue: FlightCue?
     @Published var reactionCue: ReactionCue?
+    @Published var isListening = false
+    @Published var isSpeaking = false
+    @Published var speakReplies = true
+    @Published var petSize = FatCatPetSettings.defaultSize
+    @Published var movementMode = FatCatMovementMode.calm
+    @Published var previewAnimationKey: String?
+    @Published var voiceStatus: String?
     var onLifeEvent: ((FatCatLifeEvent) -> Void)?
     var retryState = FatCatRetryState()
 
@@ -287,18 +296,20 @@ final class PeppaAgentClient: ObservableObject {
     @Published private(set) var status = "FatCat Agent is not connected."
     var onMessage: ((PeppaIPCMessage) -> Void)?
 
-    private var process: Process?
     private var socketHandle: FileHandle?
     private var buffer = Data()
     private let socketPath: URL
-    private let hermesHome: URL
-    private var launchTask: Task<Void, Never>?
+    private var outboundQueue: [PeppaIPCMessage] = []
+    private var drainTask: Task<Void, Never>?
+    private var connectionTask: Task<Bool, Never>?
+    private var connectionGeneration = 0
+    private var reconnectTask: Task<Void, Never>?
+    private var isStopped = false
 
     init() {
         let baseSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
         let support = baseSupport.appendingPathComponent("FatCat", isDirectory: true)
-        socketPath = support.appendingPathComponent("peppa-agent.sock")
-        hermesHome = URL(fileURLWithPath: ProcessInfo.processInfo.environment["FATCAT_HERMES_PATH"] ?? support.appendingPathComponent("Hermes", isDirectory: true).path, isDirectory: true)
+        socketPath = URL(fileURLWithPath: ProcessInfo.processInfo.environment["FATCAT_AGENT_SOCKET"] ?? support.appendingPathComponent("runtime/fatcat-agent.sock").path)
     }
 
     func newSession(conversationID: String, cwd: String) {
@@ -330,27 +341,20 @@ final class PeppaAgentClient: ObservableObject {
     }
 
     func configureProviderCredential(providerID: String, credentialRef: String, baseURL: String?) {
-        launchTask?.cancel()
-        launchTask = Task { [weak self] in
-            guard let self else { return }
-            await ensureConnected()
-            try? write(.providerSetCredentialRef(requestID: UUID().uuidString, providerID: providerID, credentialRef: credentialRef))
-            if let baseURL {
-                try? write(.providerSetBaseURL(requestID: UUID().uuidString, providerID: providerID, baseURL: baseURL))
-            }
-            try? await Task.sleep(for: .milliseconds(150))
-            closeRuntime()
-            await ensureConnected()
-        }
+        request(.providerSetCredentialRef(requestID: UUID().uuidString, providerID: providerID, credentialRef: credentialRef))
+        if let baseURL { request(.providerSetBaseURL(requestID: UUID().uuidString, providerID: providerID, baseURL: baseURL)) }
     }
 
-    func send(text: String, sessionID: String, observation: ObservationPayload?, requestID: String = UUID().uuidString) {
-        launchTask?.cancel()
-        launchTask = Task { [weak self] in
-            guard let self else { return }
-            await self.ensureConnected()
-            try? self.write(.userMessage(requestID: requestID, sessionID: sessionID, text: Self.prompt(text, observation: observation)))
-        }
+    func send(text: String, conversationID: String, sessionID: String, observation: ObservationPayload?, requestID: String = UUID().uuidString) {
+        request(.userMessage(requestID: requestID, conversationID: conversationID, sessionID: sessionID, text: Self.prompt(text, observation: observation)))
+    }
+
+    func renameConversation(conversationID: String, title: String) {
+        request(.conversationRename(requestID: UUID().uuidString, conversationID: conversationID, title: title))
+    }
+
+    func deleteConversation(conversationID: String) {
+        request(.conversationDelete(requestID: UUID().uuidString, conversationID: conversationID))
     }
 
     func send(observation: ObservationPayload) {
@@ -362,70 +366,67 @@ final class PeppaAgentClient: ObservableObject {
         request(.cancel(requestID: UUID().uuidString, sessionID: sessionID))
     }
 
+    func petClicked(conversationID: String?) {
+        request(.petClicked(eventID: UUID().uuidString, petID: "primary", conversationID: conversationID))
+    }
+
     func reconnect() {
-        stop()
-        launchTask = Task { [weak self] in
-            await self?.ensureConnected()
-        }
+        isStopped = false
+        connectionTask?.cancel()
+        connectionTask = nil
+        closeConnection()
+        startReconnect()
     }
 
     func stop() {
-        launchTask?.cancel()
-        if socketHandle != nil { try? write(.shutdown) }
-        closeRuntime()
-        status = "FatCat Agent stopped."
+        isStopped = true
+        drainTask?.cancel()
+        drainTask = nil
+        connectionTask?.cancel()
+        connectionTask = nil
+        reconnectTask?.cancel()
+        reconnectTask = nil
+        outboundQueue.removeAll()
+        closeConnection()
+        status = "FatCat Agent disconnected."
     }
 
-    private func closeRuntime() {
+    private func closeConnection() {
         socketHandle?.readabilityHandler = nil
         try? socketHandle?.close()
         socketHandle = nil
-        process?.terminate()
-        process = nil
-        try? FileManager.default.removeItem(at: socketPath)
+        buffer.removeAll(keepingCapacity: true)
     }
 
-    private func ensureConnected() async {
-        if socketHandle != nil { return }
-        guard let agent = agentExecutable() else {
-            status = "FatCat Agent is not bundled. Run the packaging script before launching."
-            return
-        }
-        do {
-            try FileManager.default.createDirectory(at: hermesHome, withIntermediateDirectories: true)
-            let process = Process()
-            process.executableURL = agent
-            process.arguments = ["--socket", socketPath.path, "--hermes-home", hermesHome.path]
-            var environment = ProcessInfo.processInfo.environment
-            let credentials = FatCatCredentials()
-            for (providerID, variable) in [
-                ("openai-api", "OPENAI_API_KEY"),
-                ("anthropic", "ANTHROPIC_API_KEY")
-            ] {
-                if let secret = try? credentials.read(providerID: providerID),
-                   !secret.isEmpty {
-                    environment[variable] = secret
+    private func ensureConnected() async -> Bool {
+        if socketHandle != nil { return true }
+        if let connectionTask { return await connectionTask.value }
+        connectionGeneration += 1
+        let generation = connectionGeneration
+        let nextTask = Task { [weak self] () -> Bool in
+            guard let self else { return false }
+            self.status = "Connecting to shared FatCat Agent…"
+            for attempt in 0..<12 {
+                guard !Task.isCancelled, !self.isStopped else { return false }
+                if self.connectSocket() {
+                    do {
+                        try self.write(.clientHello(client: "native_pet"))
+                        self.status = "Connected"
+                        return true
+                    } catch {
+                        self.closeConnection()
+                    }
                 }
+                let delay = min(2000, 150 * (attempt + 1))
+                try? await Task.sleep(for: .milliseconds(delay))
             }
-            process.environment = environment
-            process.standardOutput = FileHandle.nullDevice
-            process.standardError = FileHandle.nullDevice
-            try process.run()
-            self.process = process
-            status = "Connecting…"
-            for _ in 0..<50 {
-                if Task.isCancelled { return }
-                if connectSocket() {
-                    try? write(.hello)
-                    status = "Connected"
-                    return
-                }
-                try? await Task.sleep(for: .milliseconds(100))
-            }
-            status = "FatCat Agent did not become ready."
-        } catch {
-            status = "FatCat Agent could not start: \(error.localizedDescription)"
+            self.status = "Shared FatCat Agent is unavailable. Reconnect or install the LaunchAgent."
+            return false
         }
+        connectionTask = nextTask
+        let connected = await nextTask.value
+        if connectionGeneration == generation { connectionTask = nil }
+        return connected
     }
 
     private func connectSocket() -> Bool {
@@ -445,7 +446,7 @@ final class PeppaAgentClient: ObservableObject {
         handle.readabilityHandler = { [weak self] file in
             let data = file.availableData
             guard !data.isEmpty else {
-                Task { @MainActor [weak self] in self?.handleDisconnect() }
+                Task { @MainActor [weak self] in self?.handleDisconnect(file) }
                 return
             }
             Task { @MainActor [weak self] in self?.consume(data) }
@@ -475,26 +476,11 @@ final class PeppaAgentClient: ObservableObject {
         }
     }
 
-    private func handleDisconnect() {
-        socketHandle?.readabilityHandler = nil
-        try? socketHandle?.close()
-        socketHandle = nil
-        process?.terminate()
-        process = nil
-        status = "Disconnected — reconnect to continue."
-    }
-
-    private func agentExecutable() -> URL? {
-        if let override = ProcessInfo.processInfo.environment["FATCAT_AGENT_PATH"], !override.isEmpty { return URL(fileURLWithPath: override) }
-        let candidates = [
-            Bundle.main.url(forResource: "PeppaAgent/PeppaAgent", withExtension: nil),
-            Bundle.module.url(forResource: "PeppaAgent/PeppaAgent", withExtension: nil)
-        ]
-        return candidates.compactMap { $0 }.first(where: { url in
-            var isDirectory = ObjCBool(false)
-            guard FileManager.default.fileExists(atPath: url.path, isDirectory: &isDirectory), !isDirectory.boolValue else { return false }
-            return FileManager.default.isExecutableFile(atPath: url.path)
-        })
+    private func handleDisconnect(_ disconnectedHandle: FileHandle) {
+        guard socketHandle === disconnectedHandle else { return }
+        closeConnection()
+        status = "Disconnected — reconnecting…"
+        startReconnect()
     }
 
     private static func prompt(_ text: String, observation: ObservationPayload?) -> String {
@@ -509,11 +495,35 @@ final class PeppaAgentClient: ObservableObject {
     }
 
     private func request(_ message: PeppaIPCMessage) {
-        launchTask?.cancel()
-        launchTask = Task { [weak self] in
+        isStopped = false
+        outboundQueue.append(message)
+        startDrain()
+    }
+
+    private func startDrain() {
+        guard drainTask == nil, !outboundQueue.isEmpty, !isStopped else { return }
+        drainTask = Task { [weak self] in
             guard let self else { return }
-            await self.ensureConnected()
-            try? self.write(message)
+            while !Task.isCancelled, !self.outboundQueue.isEmpty {
+                guard await self.ensureConnected() else { break }
+                do {
+                    try self.write(self.outboundQueue[0])
+                    self.outboundQueue.removeFirst()
+                } catch {
+                    self.closeConnection()
+                }
+            }
+            self.drainTask = nil
+        }
+    }
+
+    private func startReconnect() {
+        guard reconnectTask == nil, !isStopped else { return }
+        reconnectTask = Task { [weak self] in
+            guard let self else { return }
+            let connected = await self.ensureConnected()
+            self.reconnectTask = nil
+            if connected { self.startDrain() }
         }
     }
 }
@@ -1103,6 +1113,160 @@ private struct ConversationHistoryView: View {
     }
 }
 
+@MainActor
+final class FatCatVoiceController {
+    var onTranscript: ((String) -> Void)?
+    var onListeningChanged: ((Bool) -> Void)?
+    var onStatus: ((String?) -> Void)?
+
+    private let audioEngine = AVAudioEngine()
+    private let recognizer = SFSpeechRecognizer(locale: Locale.current)
+    private var request: SFSpeechAudioBufferRecognitionRequest?
+    private var task: SFSpeechRecognitionTask?
+    private var permissionTask: Task<Void, Never>?
+    private var permissionGeneration = 0
+    private(set) var isListening = false
+
+    func toggleListening() {
+        if isListening {
+            stopListening()
+            return
+        }
+        requestPermissionsAndStart()
+    }
+
+    func stopListening() {
+        permissionGeneration += 1
+        permissionTask?.cancel()
+        permissionTask = nil
+        stopAudioCapture()
+    }
+
+    private func stopAudioCapture() {
+        guard isListening || task != nil || request != nil || audioEngine.isRunning else { return }
+        audioEngine.stop()
+        audioEngine.inputNode.removeTap(onBus: 0)
+        request?.endAudio()
+        task?.cancel()
+        request = nil
+        task = nil
+        setListening(false)
+    }
+
+    private func requestPermissionsAndStart() {
+        permissionGeneration += 1
+        let generation = permissionGeneration
+        permissionTask?.cancel()
+        onStatus?("Checking microphone access…")
+        permissionTask = Task { [weak self] in
+            async let speechStatus = Self.requestSpeechAuthorization()
+            async let microphoneAllowed = AVCaptureDevice.requestAccess(for: .audio)
+            guard let self else { return }
+            guard !Task.isCancelled, generation == self.permissionGeneration else { return }
+            guard await speechStatus == .authorized, await microphoneAllowed else {
+                self.onStatus?("Allow Microphone and Speech Recognition in System Settings.")
+                self.setListening(false)
+                return
+            }
+            guard !Task.isCancelled, generation == self.permissionGeneration else { return }
+            self.permissionTask = nil
+            self.startListening()
+        }
+    }
+
+    private nonisolated static func requestSpeechAuthorization() async -> SFSpeechRecognizerAuthorizationStatus {
+        await withCheckedContinuation { continuation in
+            SFSpeechRecognizer.requestAuthorization { continuation.resume(returning: $0) }
+        }
+    }
+
+    private func startListening() {
+        stopAudioCapture()
+        guard let recognizer, recognizer.isAvailable else {
+            onStatus?("Speech recognition is unavailable right now.")
+            return
+        }
+        let nextRequest = SFSpeechAudioBufferRecognitionRequest()
+        nextRequest.shouldReportPartialResults = true
+        request = nextRequest
+
+        let input = audioEngine.inputNode
+        let format = input.outputFormat(forBus: 0)
+        input.installTap(onBus: 0, bufferSize: 1_024, format: format) { buffer, _ in
+            nextRequest.append(buffer)
+        }
+        audioEngine.prepare()
+        do {
+            try audioEngine.start()
+        } catch {
+            input.removeTap(onBus: 0)
+            request = nil
+            onStatus?("FatCat could not start the microphone.")
+            return
+        }
+
+        setListening(true)
+        onStatus?("Listening…")
+        task = recognizer.recognitionTask(with: nextRequest) { [weak self] result, error in
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                if let result, result.isFinal {
+                    let text = result.bestTranscription.formattedString.trimmingCharacters(in: .whitespacesAndNewlines)
+                    self.stopListening()
+                    self.onStatus?(nil)
+                    if !text.isEmpty { self.onTranscript?(text) }
+                } else if error != nil {
+                    self.stopListening()
+                    self.onStatus?("FatCat did not catch that. Try again.")
+                }
+            }
+        }
+    }
+
+    private func setListening(_ value: Bool) {
+        isListening = value
+        onListeningChanged?(value)
+    }
+}
+
+@MainActor
+final class FatCatSpeechController: NSObject, @preconcurrency AVSpeechSynthesizerDelegate {
+    var onSpeakingChanged: ((Bool) -> Void)?
+    private let synthesizer = AVSpeechSynthesizer()
+
+    override init() {
+        super.init()
+        synthesizer.delegate = self
+    }
+
+    func speak(_ text: String) {
+        let clean = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !clean.isEmpty else { return }
+        synthesizer.stopSpeaking(at: .immediate)
+        let utterance = AVSpeechUtterance(string: clean)
+        utterance.rate = 0.49
+        utterance.pitchMultiplier = 1.05
+        synthesizer.speak(utterance)
+    }
+
+    func stop() {
+        synthesizer.stopSpeaking(at: .immediate)
+        onSpeakingChanged?(false)
+    }
+
+    func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didStart utterance: AVSpeechUtterance) {
+        onSpeakingChanged?(true)
+    }
+
+    func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didFinish utterance: AVSpeechUtterance) {
+        onSpeakingChanged?(false)
+    }
+
+    func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didCancel utterance: AVSpeechUtterance) {
+        onSpeakingChanged?(false)
+    }
+}
+
 /// Moves the transparent FatCat panel along planned curved paths, entirely
 /// separate from the avatar's internal pose animation. All safety policy and
 /// path math lives in PeppaAnywhereCore; this class only gathers live context
@@ -1123,6 +1287,7 @@ final class FatCatFlightController {
     private var currentPlan: FatCatFlightPlan?
     private var flightStartedAt: Date?
     private var lastFlightEndedAt: Date?
+    private var movementStartedAt = Date()
     private var lastDragEndedAt: Date?
     private var isDraggingPet = false
     private var flightCueRevision = 0
@@ -1165,11 +1330,13 @@ final class FatCatFlightController {
 
     func start(panel: NSPanel) {
         self.panel = panel
+        movementStartedAt = Date()
         evaluationTask?.cancel()
         evaluationTask = Task { [weak self] in
             while !Task.isCancelled {
                 try? await Task.sleep(for: .seconds(Self.evaluationInterval))
                 guard !Task.isCancelled else { return }
+                self?.enqueueAutonomousFlightIfDue()
                 self?.flushPendingFlightIfSafe()
             }
         }
@@ -1219,6 +1386,14 @@ final class FatCatFlightController {
         sendReaction(cue.reaction)
         if let reason = cue.flightReason { pendingFlight.enqueue(reason) }
         flushPendingFlightIfSafe()
+    }
+
+    private func enqueueAutonomousFlightIfDue(now: Date = Date()) {
+        let mode = model.movementMode
+        guard mode != .off, pendingFlight.pendingReason == nil else { return }
+        let reference = lastFlightEndedAt ?? movementStartedAt
+        guard now.timeIntervalSince(reference) >= mode.idleInterval else { return }
+        pendingFlight.enqueue(mode == .playful ? .playfulAfterInactivity : .idleReposition)
     }
 
     private func flushPendingFlightIfSafe() {
@@ -1345,12 +1520,12 @@ final class FatCatFlightController {
         context.isTyping = CGEventSource.secondsSinceLastEventType(.combinedSessionState, eventType: .keyDown) < 2
         context.isDraggingPet = isDraggingPet
         context.isChatFocused = model.isChatOpen
-        context.isSpeaking = model.isGenerating
-        context.isListening = model.life.work == .listening
+        context.isSpeaking = model.isSpeaking || model.isGenerating
+        context.isListening = model.isListening || model.life.work == .listening
         context.isWaitingForPermission = model.life.work == .asking
         context.isMeetingActive = Self.frontmostIsMeetingApp()
         context.isFullscreenMediaActive = Self.frontmostWindowIsFullscreen()
-        context.isMovementPaused = isMovementPaused
+        context.isMovementPaused = isMovementPaused || model.movementMode == .off
         context.isPositionLocked = isPositionLocked
         context.isAsleep = model.life.asleep || model.life.observationPaused
         context.isReduceMotionEnabled = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
@@ -1399,32 +1574,115 @@ struct PetRootView: View {
     let onClick: () -> Void
     let onDragBegan: () -> Void
     let onDragEnded: () -> Void
-    let onSend: () -> Void
-    let onRetry: () -> Void
-    let onReconnect: () -> Void
-    let onStop: () -> Void
-    let onClose: () -> Void
-    let onExpand: () -> Void
-    let onNewChat: () -> Void
-    let onSelectConversation: (FatCatConversationRecord) -> Void
-    let onDeleteConversation: (FatCatConversationRecord) -> Void
-    let onRenameConversation: (FatCatConversationRecord, String) -> Void
 
     var body: some View {
-        Group {
-            if model.isChatOpen {
-                HStack(alignment: .bottom, spacing: 12) {
-                    FatCatAvatarView(animationKey: model.life.animationKey, flightCue: model.flightCue, reactionCue: model.reactionCue, onClick: onClick, onDragBegan: onDragBegan, onDragEnded: onDragEnded).frame(width: 200, height: 200)
-                    ChatBubble(model: model, onSend: onSend, onRetry: onRetry, onReconnect: onReconnect, onStop: onStop, onClose: onClose, onExpand: onExpand, onNewChat: onNewChat, onSelectConversation: onSelectConversation, onDeleteConversation: onDeleteConversation, onRenameConversation: onRenameConversation)
-                }.padding(14)
-            } else {
-                FatCatAvatarView(animationKey: model.life.animationKey, flightCue: model.flightCue, reactionCue: model.reactionCue, onClick: onClick, onDragBegan: onDragBegan, onDragEnded: onDragEnded).frame(width: 220, height: 220)
+        FatCatAvatarView(
+            animationKey: model.isListening ? "listening" : (model.previewAnimationKey ?? model.life.animationKey),
+            flightCue: model.flightCue,
+            reactionCue: model.reactionCue,
+            onClick: onClick,
+            onDragBegan: onDragBegan,
+            onDragEnded: onDragEnded
+        )
+        .background(Color.clear)
+    }
+}
+
+struct FatCatMiniChatView: View {
+    @ObservedObject var model: PetModel
+    let onSend: () -> Void
+    let onClose: () -> Void
+    let onMicrophone: () -> Void
+    let onSpeaker: () -> Void
+
+    private var latestUser: ChatMessage? { model.messages.last(where: { $0.role == .user }) }
+    private var latestAssistant: ChatMessage? { model.messages.last(where: { $0.role == .assistant }) }
+    private var replyText: String {
+        if let text = latestAssistant?.text, !text.isEmpty { return text }
+        return model.isGenerating ? "Thinking…" : "Ask FatCat anything."
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack(spacing: 8) {
+                Circle().fill(statusColor).frame(width: 7, height: 7)
+                Text(model.voiceStatus ?? (model.isGenerating ? "FatCat is thinking" : model.agentStatus))
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                Spacer()
             }
-        }.background(Color.clear)
+
+            if let latestUser {
+                Text(latestUser.text)
+                    .font(.system(size: 13))
+                    .padding(.horizontal, 11).padding(.vertical, 8)
+                    .background(Color.primary.opacity(0.08))
+                    .clipShape(RoundedRectangle(cornerRadius: 12))
+                    .frame(maxWidth: .infinity, alignment: .trailing)
+            }
+
+            ScrollView {
+                Text(replyText)
+                    .font(.system(size: 14))
+                    .lineSpacing(3)
+                    .textSelection(.enabled)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .frame(minHeight: 58, maxHeight: 112)
+
+            HStack(spacing: 8) {
+                TextField("Message FatCat", text: $model.draft)
+                    .textFieldStyle(.plain)
+                    .onSubmit(onSend)
+                Button(action: onSend) { Image(systemName: "arrow.up") }
+                    .buttonStyle(.borderedProminent)
+                    .clipShape(Circle())
+                    .disabled(model.draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            }
+            .padding(.leading, 12).padding(.trailing, 5).padding(.vertical, 5)
+            .background(Color.primary.opacity(0.065))
+            .clipShape(Capsule())
+
+            HStack(spacing: 16) {
+                control(model.isListening ? "mic.fill" : "mic", active: model.isListening, action: onMicrophone, label: "Talk to FatCat")
+                control("xmark", active: false, action: onClose, label: "Close chat")
+                control(model.speakReplies ? "speaker.wave.2.fill" : "speaker.slash.fill", active: model.speakReplies, action: onSpeaker, label: "Spoken replies")
+            }
+            .frame(maxWidth: .infinity)
+        }
+        .padding(16)
+        .frame(width: 360, height: 286)
+        .background(.ultraThinMaterial)
+        .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 24, style: .continuous).stroke(.white.opacity(0.22)))
+        .shadow(color: .black.opacity(0.18), radius: 24, y: 10)
+    }
+
+    private var statusColor: Color {
+        model.agentStatus == "Connected" ? .green : .orange
+    }
+
+    private func control(_ symbol: String, active: Bool, action: @escaping () -> Void, label: String) -> some View {
+        Button(action: action) {
+            Image(systemName: symbol)
+                .font(.system(size: 16, weight: .medium))
+                .frame(width: 36, height: 36)
+                .background(active ? Color.accentColor.opacity(0.2) : Color(nsColor: .controlBackgroundColor).opacity(0.82))
+                .clipShape(Circle())
+                .overlay(Circle().stroke(.white.opacity(0.25)))
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(label)
     }
 }
 
 final class PetPanel: NSPanel {
+    override var canBecomeKey: Bool { true }
+    override var canBecomeMain: Bool { false }
+}
+
+final class FatCatMiniChatPanel: NSPanel {
     override var canBecomeKey: Bool { true }
     override var canBecomeMain: Bool { false }
 }
@@ -1435,6 +1693,7 @@ final class PetWindowController: NSObject, NSWindowDelegate {
     private let model = PetModel()
     private let agent = PeppaAgentClient()
     private let positionStore = PetPositionStore()
+    private let petSettingsStore = FatCatPetSettingsStore()
     private var auditStore: PeppaAuditStore?
     private let conversationStore: FatCatConversationStore
     private var latestObservation: ObservationPayload?
@@ -1446,21 +1705,44 @@ final class PetWindowController: NSObject, NSWindowDelegate {
     private var pendingPrompts: [PendingPrompt] = []
     private var pendingSessionConversationID: String?
     private var ignoredRequestIDs = Set<String>()
+    private var lastSpokenRequestID: String?
     private var activeSessionID: String?
     private var lastObservedApp: String?
     private var lastObservedWindow: String?
     private var panel: PetPanel!
+    private var miniChatPanel: FatCatMiniChatPanel!
     private var statusItem: NSStatusItem!
     private var secondaryWindows: [NSWindow] = []
     private var cancellables = Set<AnyCancellable>()
     private var flightController: FatCatFlightController!
+    private var voiceController: FatCatVoiceController!
+    private var speechController: FatCatSpeechController!
 
     init(perception: ScreenPerceptionCoordinator) {
         self.perception = perception
         auditStore = nil
         conversationStore = Self.makeConversationStore()
         super.init()
+        let settings = petSettingsStore.load()
+        model.petSize = settings.petSize
+        model.movementMode = settings.movementMode
+        model.speakReplies = settings.spokenReplies
+        model.previewAnimationKey = settings.previewAnimationKey
+        voiceController = FatCatVoiceController()
+        speechController = FatCatSpeechController()
         flightController = FatCatFlightController(model: model, positionStore: positionStore)
+        voiceController.onListeningChanged = { [weak self] isListening in
+            self?.model.isListening = isListening
+        }
+        voiceController.onStatus = { [weak self] status in self?.model.voiceStatus = status }
+        voiceController.onTranscript = { [weak self] text in
+            guard let self else { return }
+            self.model.draft = text
+            self.sendChat()
+        }
+        speechController.onSpeakingChanged = { [weak self] isSpeaking in
+            self?.model.isSpeaking = isSpeaking
+        }
         model.conversations = conversationStore.records
         model.selectedConversationID = conversationStore.selectedID
         perception.onObservation = { [weak self] observation in
@@ -1482,6 +1764,7 @@ final class PetWindowController: NSObject, NSWindowDelegate {
             .sink { [weak self] now in self?.model.handleLife(.tick, at: now) }
             .store(in: &cancellables)
         buildPanel()
+        buildMiniChatPanel()
         buildStatusItem()
     }
 
@@ -1499,24 +1782,28 @@ final class PetWindowController: NSObject, NSWindowDelegate {
             ?? NSScreen.main?.visibleFrame
             ?? NSRect(x: 80, y: 80, width: 1200, height: 800))
         if let saved = positionStore.load() {
-            let bounds = PanelBounds(width: screen.width - 220, height: screen.height - 220)
+            let bounds = PanelBounds(width: screen.width - model.petSize, height: screen.height - model.petSize)
             let relative = PetPosition(x: saved.x - screen.minX, y: saved.y - screen.minY).clamped(to: bounds)
             panel.setFrameOrigin(NSPoint(x: relative.x + screen.minX, y: relative.y + screen.minY))
         } else {
-            panel.setFrameOrigin(NSPoint(x: screen.midX - 110, y: screen.minY + 80))
+            panel.setFrameOrigin(NSPoint(x: screen.midX - model.petSize / 2, y: screen.minY + 80))
         }
         panel.orderFrontRegardless()
+        agent.requestProviderInventory()
         flightController.start(panel: panel)
     }
 
     func stop() {
         flightController.stop()
+        voiceController.stopListening()
+        speechController.stop()
         positionStore.save(PetPosition(x: panel.frame.minX, y: panel.frame.minY))
+        miniChatPanel.orderOut(nil)
         agent.stop()
     }
 
     private func buildPanel() {
-        panel = PetPanel(contentRect: NSRect(x: 0, y: 0, width: 220, height: 220), styleMask: [.borderless], backing: .buffered, defer: false)
+        panel = PetPanel(contentRect: NSRect(x: 0, y: 0, width: model.petSize, height: model.petSize), styleMask: [.borderless], backing: .buffered, defer: false)
         panel.delegate = self
         panel.isOpaque = false
         panel.backgroundColor = .clear
@@ -1525,7 +1812,34 @@ final class PetWindowController: NSObject, NSWindowDelegate {
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         panel.isMovableByWindowBackground = true
         panel.hidesOnDeactivate = false
-        panel.contentView = NSHostingView(rootView: PetRootView(model: model, onClick: { [weak self] in self?.openChat() }, onDragBegan: { [weak self] in self?.flightController.handleDragBegan() }, onDragEnded: { [weak self] in self?.flightController.handleDragEnded() }, onSend: { [weak self] in self?.sendChat() }, onRetry: { [weak self] in self?.retryLastPrompt() }, onReconnect: { [weak self] in self?.agent.reconnect() }, onStop: { [weak self] in self?.stopGeneration() }, onClose: { [weak self] in self?.closeChat() }, onExpand: { [weak self] in self?.toggleExpanded() }, onNewChat: { [weak self] in self?.newChat() }, onSelectConversation: { [weak self] record in self?.selectConversation(record) }, onDeleteConversation: { [weak self] record in self?.deleteConversation(record) }, onRenameConversation: { [weak self] record, title in self?.renameConversation(record, title: title) }))
+        panel.contentView = NSHostingView(rootView: PetRootView(
+            model: model,
+            onClick: { [weak self] in self?.toggleMiniChat() },
+            onDragBegan: { [weak self] in self?.flightController.handleDragBegan() },
+            onDragEnded: { [weak self] in self?.flightController.handleDragEnded() }
+        ))
+    }
+
+    private func buildMiniChatPanel() {
+        miniChatPanel = FatCatMiniChatPanel(
+            contentRect: NSRect(x: 0, y: 0, width: 360, height: 286),
+            styleMask: [.borderless],
+            backing: .buffered,
+            defer: false
+        )
+        miniChatPanel.isOpaque = false
+        miniChatPanel.backgroundColor = .clear
+        miniChatPanel.hasShadow = false
+        miniChatPanel.level = .floating
+        miniChatPanel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+        miniChatPanel.hidesOnDeactivate = false
+        miniChatPanel.contentView = NSHostingView(rootView: FatCatMiniChatView(
+            model: model,
+            onSend: { [weak self] in self?.sendChat() },
+            onClose: { [weak self] in self?.closeChat() },
+            onMicrophone: { [weak self] in self?.toggleVoiceInput() },
+            onSpeaker: { [weak self] in self?.toggleSpokenReplies() }
+        ))
     }
 
     private func buildStatusItem() {
@@ -1534,14 +1848,24 @@ final class PetWindowController: NSObject, NSWindowDelegate {
         statusItem.menu = makeMenu()
     }
 
+    private func toggleMiniChat() {
+        agent.petClicked(conversationID: model.selectedConversationID)
+        if model.isChatOpen { closeChat() } else { openChat() }
+    }
+
     private func openChat() {
-        guard !model.isChatOpen else { return }
+        guard !model.isChatOpen else {
+            positionMiniChat()
+            miniChatPanel.makeKeyAndOrderFront(nil)
+            return
+        }
         flightController.cancelFlight()
         model.handleLife(.userClickedAvatar)
         model.isChatOpen = true
         model.handleLife(.userOpenedChat)
-        panel.setContentSize(NSSize(width: 660, height: 555))
-        panel.makeKeyAndOrderFront(nil)
+        positionMiniChat()
+        miniChatPanel.makeKeyAndOrderFront(nil)
+        panel.orderFrontRegardless()
         resumeSelectedConversation()
     }
 
@@ -1549,13 +1873,88 @@ final class PetWindowController: NSObject, NSWindowDelegate {
         model.isChatOpen = false
         model.isExpanded = false
         model.handleLife(.userClosedChat)
-        panel.setContentSize(NSSize(width: 220, height: 220))
+        voiceController.stopListening()
+        model.voiceStatus = nil
+        miniChatPanel.orderOut(nil)
         panel.orderFrontRegardless()
     }
 
     private func toggleExpanded() {
         model.isExpanded.toggle()
-        panel.setContentSize(model.isExpanded ? NSSize(width: 1020, height: 735) : NSSize(width: 660, height: 555))
+    }
+
+    private func positionMiniChat() {
+        let visible = panel.screen?.visibleFrame ?? NSScreen.main?.visibleFrame ?? panel.frame
+        let size = miniChatPanel.frame.size
+        var x = panel.frame.maxX + 12
+        if x + size.width > visible.maxX { x = panel.frame.minX - size.width - 12 }
+        x = min(max(x, visible.minX), visible.maxX - size.width)
+        let y = min(max(panel.frame.midY - size.height / 2, visible.minY), visible.maxY - size.height)
+        miniChatPanel.setFrameOrigin(NSPoint(x: x, y: y))
+    }
+
+    private func currentPetSettings() -> FatCatPetSettings {
+        FatCatPetSettings(
+            petSize: model.petSize,
+            movementMode: model.movementMode,
+            spokenReplies: model.speakReplies,
+            previewAnimationKey: model.previewAnimationKey
+        )
+    }
+
+    private func savePetSettings() {
+        petSettingsStore.save(currentPetSettings())
+    }
+
+    private func setPetSize(_ requestedSize: Double) {
+        let nextSize = FatCatPetSettings(petSize: requestedSize).petSize
+        guard nextSize != model.petSize else { return }
+        flightController.cancelFlight()
+        let previousSize = model.petSize
+        let nextOrigin = FatCatPetSettings.resizedOrigin(
+            from: PetPosition(x: panel.frame.minX, y: panel.frame.minY),
+            oldSize: previousSize,
+            newSize: nextSize
+        )
+        let screen = panel.screen?.visibleFrame ?? NSScreen.main?.visibleFrame ?? panel.frame
+        let relative = PetPosition(x: nextOrigin.x - screen.minX, y: nextOrigin.y - screen.minY)
+            .clamped(to: PanelBounds(width: screen.width - nextSize, height: screen.height - nextSize))
+        model.petSize = nextSize
+        panel.setFrame(
+            NSRect(x: relative.x + screen.minX, y: relative.y + screen.minY, width: nextSize, height: nextSize),
+            display: true,
+            animate: false
+        )
+        positionStore.save(PetPosition(x: panel.frame.minX, y: panel.frame.minY))
+        if model.isChatOpen { positionMiniChat() }
+        savePetSettings()
+    }
+
+    private func setMovementMode(_ mode: FatCatMovementMode) {
+        model.movementMode = mode
+        if mode == .off { flightController.cancelFlight() }
+        savePetSettings()
+        statusItem.menu = makeMenu()
+    }
+
+    private func setAnimationPreview(_ animationKey: String?) {
+        model.previewAnimationKey = animationKey
+        savePetSettings()
+    }
+
+    private func toggleSpokenReplies() {
+        setSpokenReplies(!model.speakReplies)
+    }
+
+    private func toggleVoiceInput() {
+        speechController.stop()
+        voiceController.toggleListening()
+    }
+
+    private func setSpokenReplies(_ enabled: Bool) {
+        model.speakReplies = enabled
+        if !enabled { speechController.stop() }
+        savePetSettings()
     }
 
     private func sendChat(promptOverride: String? = nil) {
@@ -1598,7 +1997,7 @@ final class PetWindowController: NSObject, NSWindowDelegate {
         let requestID = UUID().uuidString
         model.currentRequestID = requestID
         model.isGenerating = true
-        agent.send(text: text, sessionID: sessionID, observation: observation, requestID: requestID)
+        agent.send(text: text, conversationID: conversationID, sessionID: sessionID, observation: observation, requestID: requestID)
     }
 
     private func startNextPendingPrompt(for conversationID: String, sessionID: String) {
@@ -1669,6 +2068,7 @@ final class PetWindowController: NSObject, NSWindowDelegate {
 
     private func deleteConversation(_ record: FatCatConversationRecord) {
         if model.selectedConversationID == record.id { abandonActiveTurn(); activeSessionID = nil }
+        agent.deleteConversation(conversationID: record.id)
         try? conversationStore.delete(recordID: record.id)
         model.conversations = conversationStore.records
         model.selectedConversationID = conversationStore.selectedID
@@ -1684,6 +2084,7 @@ final class PetWindowController: NSObject, NSWindowDelegate {
     private func renameConversation(_ record: FatCatConversationRecord, title: String) {
         let title = title.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !title.isEmpty else { return }
+        agent.renameConversation(conversationID: record.id, title: title)
         try? conversationStore.update(recordID: record.id, title: title)
         model.conversations = conversationStore.records
     }
@@ -1712,12 +2113,53 @@ final class PetWindowController: NSObject, NSWindowDelegate {
 
     private static func makeConversationStore() -> FatCatConversationStore {
         let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("FatCat", isDirectory: true)
-        let url = support.appendingPathComponent("conversations.json")
-        return (try? FatCatConversationStore(fileURL: url)) ?? (try! FatCatConversationStore(fileURL: FileManager.default.temporaryDirectory.appendingPathComponent("fatcat-conversations.json")))
+        let url = support.appendingPathComponent("native-conversations-cache.json")
+        return (try? FatCatConversationStore(fileURL: url)) ?? (try! FatCatConversationStore(fileURL: FileManager.default.temporaryDirectory.appendingPathComponent("fatcat-native-conversations-cache.json")))
     }
 
     private func handleAgentMessage(_ message: PeppaIPCMessage) {
         switch message {
+        case let .conversationSnapshot(selectedID, records):
+            let now = Date()
+            let mapped = records.map { record in
+                FatCatConversationRecord(
+                    id: record.id,
+                    hermesSessionID: record.sessionID,
+                    title: record.title,
+                    createdAt: now,
+                    updatedAt: now,
+                    lastPreview: record.messages.last?.text ?? "",
+                    workspacePath: record.workspacePath
+                )
+            }
+            try? conversationStore.replace(records: mapped, selectedID: selectedID)
+            model.conversations = mapped
+            model.selectedConversationID = selectedID
+            guard let selected = records.first(where: { $0.id == selectedID }) else {
+                activeSessionID = nil
+                model.replaceMessages([])
+                return
+            }
+            model.replaceMessages(selected.messages.map { message in
+                ChatMessage(
+                    id: UUID(uuidString: message.id) ?? UUID(),
+                    role: message.role == "user" ? .user : (message.role == "assistant" ? .assistant : .system),
+                    text: message.text
+                )
+            })
+            if let sessionID = selected.sessionID, activeSessionID != sessionID {
+                activeSessionID = sessionID
+                agent.loadSession(conversationID: selected.id, sessionID: sessionID, cwd: selected.workspacePath)
+            }
+        case let .messageAdded(conversationID, sessionID, message):
+            guard conversationID == model.selectedConversationID, sessionID == activeSessionID else { return }
+            if message.role == "user" {
+                if model.messages.last(where: { $0.role == .user })?.text != message.text { model.appendUser(message.text) }
+                model.currentRequestID = message.id
+                model.isGenerating = true
+            } else if message.role == "system" {
+                model.appendSystem(message.text)
+            }
         case let .assistantDelta(requestID, sessionID, text):
             guard isActiveSession(sessionID), !ignoredRequestIDs.contains(requestID) else { return }
             model.handleLife(.hermes(.streamDelta))
@@ -1805,7 +2247,7 @@ final class PetWindowController: NSObject, NSWindowDelegate {
             guard conversationID == model.selectedConversationID else { return }
             if role == "user" { model.appendUser(text) }
             else if role == "assistant" { let requestID = UUID().uuidString; model.beginAssistant(requestID: requestID); model.appendAssistant(text, requestID: requestID); model.completeAssistant(requestID: requestID) }
-        case .newSession, .loadSession, .listSessions, .sessionList, .cancel, .hello, .helloAck, .userMessage, .observation, .shutdown, .shutdownAck,
+        case .newSession, .loadSession, .listSessions, .sessionList, .cancel, .hello, .clientHello, .helloAck, .petClicked, .conversationRename, .conversationDelete, .userMessage, .observation, .shutdown, .shutdownAck,
              .providerInventory, .providerModels, .providerSetDefault, .providerSetCredentialRef, .providerSetBaseURL, .providerValidate:
             break
         }
@@ -1826,8 +2268,16 @@ final class PetWindowController: NSObject, NSWindowDelegate {
         case .stopping:
             model.handleLife(.hermes(.turnFailed))
         case .completed:
-            if let requestID = requestID ?? model.currentRequestID { model.completeAssistant(requestID: requestID) }
+            let completedRequestID = requestID ?? model.currentRequestID
+            if let completedRequestID { model.completeAssistant(requestID: completedRequestID) }
             model.handleLife(.hermes(.turnCompleted))
+            if model.speakReplies,
+               let completedRequestID,
+               completedRequestID != lastSpokenRequestID,
+               let reply = model.messages.last(where: { $0.role == .assistant && $0.requestID == completedRequestID })?.text {
+                lastSpokenRequestID = completedRequestID
+                speechController.speak(reply)
+            }
             if let conversationID = model.selectedConversationID, let sessionID = activeSessionID {
                 startNextPendingPrompt(for: conversationID, sessionID: sessionID)
             }
@@ -1922,9 +2372,13 @@ final class PetWindowController: NSObject, NSWindowDelegate {
             setDefault: { [weak self] providerID, modelName in
                 self?.agent.setProviderDefault(providerID: providerID, model: modelName)
                 self?.agent.validateProvider(providerID: providerID, model: modelName)
-            }
+            },
+            setPetSize: { [weak self] size in self?.setPetSize(size) },
+            setMovementMode: { [weak self] mode in self?.setMovementMode(mode) },
+            setSpokenReplies: { [weak self] enabled in self?.setSpokenReplies(enabled) },
+            setAnimationPreview: { [weak self] key in self?.setAnimationPreview(key) }
         )
-        showSecondary(title: "FatCat Settings", size: NSSize(width: 520, height: 650), view: view)
+        showSecondary(title: "FatCat Settings", size: NSSize(width: 520, height: 700), view: view)
     }
 
     private func saveProviderCredential(providerID: String, secret: String, baseURL: String?) -> Bool {
@@ -1966,6 +2420,7 @@ final class PetWindowController: NSObject, NSWindowDelegate {
     }
 
     func windowDidMove(_ notification: Notification) {
+        if model.isChatOpen { positionMiniChat() }
         // Autonomous flight saves its own landing spot; only persist user moves.
         guard !flightController.isAnimatingWindow else { return }
         positionStore.save(PetPosition(x: panel.frame.minX, y: panel.frame.minY))
@@ -1983,12 +2438,17 @@ struct SettingsView: View {
     let refreshModels: (_ providerID: String) -> Void
     let saveCredential: (_ providerID: String, _ secret: String, _ baseURL: String?) -> Bool
     let setDefault: (_ providerID: String, _ model: String) -> Void
+    let setPetSize: (_ size: Double) -> Void
+    let setMovementMode: (_ mode: FatCatMovementMode) -> Void
+    let setSpokenReplies: (_ enabled: Bool) -> Void
+    let setAnimationPreview: (_ animationKey: String?) -> Void
 
     @State private var selectedProviderID = "openai-codex"
     @State private var modelName = ""
     @State private var baseURL = ""
     @State private var apiKey = ""
     @State private var setupMessage: String?
+    @State private var showAdvancedPetControls = false
 
     private var selectedConnection: FatCatProviderConnection? {
         model.providerSetup.connection(providerID: selectedProviderID)
@@ -1998,6 +2458,52 @@ struct SettingsView: View {
         ScrollView {
           VStack(alignment: .leading, spacing: 14) {
             Text("FatCat").font(.title3.weight(.semibold))
+            GroupBox {
+                VStack(alignment: .leading, spacing: 12) {
+                    HStack {
+                        Label("Pet size", systemImage: "arrow.up.left.and.arrow.down.right")
+                        Spacer()
+                        Text("\(Int(model.petSize)) px")
+                            .font(.system(.caption, design: .monospaced).weight(.medium))
+                            .foregroundStyle(.secondary)
+                    }
+                    Slider(
+                        value: Binding(get: { model.petSize }, set: { value in setPetSize(value) }),
+                        in: FatCatPetSettings.minimumSize...FatCatPetSettings.maximumSize,
+                        step: 10
+                    )
+                    .accessibilityLabel("Pet size")
+
+                    Picker("Movement", selection: Binding(get: { model.movementMode }, set: { mode in setMovementMode(mode) })) {
+                        ForEach(FatCatMovementMode.allCases, id: \.self) { mode in
+                            Text(mode.title).tag(mode)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+
+                    Toggle(
+                        "Speak FatCat's replies",
+                        isOn: Binding(get: { model.speakReplies }, set: { enabled in setSpokenReplies(enabled) })
+                    )
+
+                    DisclosureGroup("Advanced animation preview", isExpanded: $showAdvancedPetControls) {
+                        Picker(
+                            "Animation",
+                            selection: Binding<String?>(get: { model.previewAnimationKey }, set: { key in setAnimationPreview(key) })
+                        ) {
+                            Text("Automatic").tag(String?.none)
+                            ForEach(FatCatPetSettings.animationKeys, id: \.self) { key in
+                                Text(key.capitalized).tag(String?.some(key))
+                            }
+                        }
+                        .padding(.top, 6)
+                        Text("Automatic maps FatCat's live state to an emotion. Pick one here to preview it.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                .padding(4)
+            }
             Text("Screen context stays local and is reduced to privacy-filtered structured metadata.").font(.callout).foregroundStyle(.secondary)
             Label(status, systemImage: isPaused ? "pause.circle" : "eye").font(.caption)
             Label(model.agentStatus, systemImage: "brain").font(.caption).lineLimit(2)
@@ -2083,7 +2589,7 @@ struct SettingsView: View {
                     let endpoint = selectedProviderID == "openai-api" ? baseURL.trimmingCharacters(in: .whitespacesAndNewlines) : ""
                     if saveCredential(selectedProviderID, secret, endpoint.isEmpty ? nil : endpoint) {
                         apiKey = ""
-                        setupMessage = "Saved to the macOS Keychain. Hermes will restart with the new provider settings."
+                        setupMessage = "Saved to the macOS Keychain and sent to the shared FatCat Agent."
                     } else {
                         setupMessage = "FatCat could not save that API key to the macOS Keychain."
                     }

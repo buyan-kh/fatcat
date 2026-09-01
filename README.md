@@ -5,7 +5,8 @@ Hermes a face, eyes on the screen, and presence. Chat is a polished Hermes ACP
 session; the avatar follows Hermes’s real state. FatCat is not a second
 intelligence, IDE, or browser agent.
 
-Voice is part of the product definition and is not in this build yet.
+The native pet includes a compact latest-exchange chat, macOS speech input,
+spoken replies, adjustable size, autonomous movement, and animation previews.
 
 ## Hermes and providers
 
@@ -33,30 +34,48 @@ and provenance.
 
 ```bash
 npm install
+npm --prefix electron install
 ./scripts/run-peppa-macos.sh
 ```
 
+The run script builds the app, registers one persistent per-user FatCat Agent,
+and opens the native pet. The agent survives either client closing and listens
+only on the user-owned socket at
+`~/Library/Application Support/FatCat/runtime/fatcat-agent.sock`.
+
+Click FatCat once to open the small native chat and click it again to hide the
+chat without moving or resizing the pet. The three round controls start voice
+input, close the chat, and toggle spoken replies. Pet size (120–360 px), Calm /
+Playful / Off movement, spoken replies, and animation preview live in Settings.
+Microphone and Speech Recognition access are requested only when voice input is
+used.
+
 Text conversations persist locally and resume their Hermes ACP session after a
-relaunch. A working Hermes provider is required for real responses.
+relaunch. A working Hermes provider is required for real responses. To remove
+the background registration without deleting conversations or Hermes data:
+
+```bash
+./scripts/uninstall-fatcat-launch-agent.sh
+```
 
 ## Electron main window
 
-The new main window is a separate Electron app. It owns its own private Hermes
-agent process, app data, conversations, and session socket; the existing native
-floating cat remains unchanged. In this phase the two apps must not share a
-live agent socket.
+The Electron app is the full conversation workspace. It connects to the same
+FatCat Agent as the native pet, so both clients share the selected conversation,
+messages, streaming state, and Hermes session. Electron never starts or stops
+the agent.
 
 Install and start the Electron client from the repository root:
 
 ```bash
 npm --prefix electron install
-FATCAT_AGENT_PATH=/absolute/path/to/PeppaAgent npm run electron:dev
+npm run electron:dev
 ```
 
-`FATCAT_AGENT_PATH` must point to an executable bundled `PeppaAgent` launcher.
-When it is omitted during repository development, FatCat looks for
-`agent/peppa_agent/PeppaAgent`; that launcher still requires its bundled Python
-runtime. `FATCAT_HERMES_PATH` can optionally select a separate Hermes home.
+Start the LaunchAgent first with `./scripts/run-peppa-macos.sh` or
+`./scripts/install-fatcat-launch-agent.sh`. Both clients use
+`FATCAT_AGENT_SOCKET` only when an explicit development socket override is
+needed.
 
 The Electron-only checks are available as `npm run electron:test` and
 `npm run electron:build`. The conditional real-agent smoke test creates a

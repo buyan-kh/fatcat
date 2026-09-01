@@ -18,9 +18,49 @@ public enum PeppaAgentState: String, Codable, Equatable, Sendable {
     case error
 }
 
+public struct FatCatIPCMessageRecord: Codable, Equatable, Sendable {
+    public let id: String
+    public let role: String
+    public let text: String
+
+    public init(id: String, role: String, text: String) {
+        self.id = id
+        self.role = role
+        self.text = text
+    }
+}
+
+public struct FatCatIPCConversationRecord: Codable, Equatable, Sendable {
+    public let id: String
+    public let title: String
+    public let workspacePath: String
+    public let sessionID: String?
+    public let messages: [FatCatIPCMessageRecord]
+
+    enum CodingKeys: String, CodingKey {
+        case id, title, messages
+        case workspacePath = "workspace_path"
+        case sessionID = "session_id"
+    }
+
+    public init(id: String, title: String, workspacePath: String, sessionID: String?, messages: [FatCatIPCMessageRecord]) {
+        self.id = id
+        self.title = title
+        self.workspacePath = workspacePath
+        self.sessionID = sessionID
+        self.messages = messages
+    }
+}
+
 public enum PeppaIPCMessage: Equatable, Sendable {
     case hello
+    case clientHello(client: String)
     case helloAck(agentVersion: String)
+    case petClicked(eventID: String, petID: String, conversationID: String?)
+    case conversationRename(requestID: String, conversationID: String, title: String)
+    case conversationDelete(requestID: String, conversationID: String)
+    case conversationSnapshot(selectedID: String?, records: [FatCatIPCConversationRecord])
+    case messageAdded(conversationID: String, sessionID: String, message: FatCatIPCMessageRecord)
     case newSession(requestID: String, conversationID: String, cwd: String)
     case loadSession(requestID: String, conversationID: String, sessionID: String, cwd: String)
     case listSessions(requestID: String, cwd: String?)
@@ -29,7 +69,7 @@ public enum PeppaIPCMessage: Equatable, Sendable {
     case sessionLoadFailed(requestID: String, conversationID: String, sessionID: String, message: String)
     case sessionHistory(conversationID: String, sessionID: String, role: String, text: String)
     case sessionList(requestID: String, sessions: [[String: String]])
-    case userMessage(requestID: String, sessionID: String, text: String)
+    case userMessage(requestID: String, conversationID: String, sessionID: String, text: String)
     case cancel(requestID: String, sessionID: String)
     case observation(requestID: String?, activeApp: String, window: String?, visibleText: [String], confidence: Double)
     case plan(requestID: String, sessionID: String, steps: [String])
@@ -102,8 +142,21 @@ public enum PeppaIPCCodec {
             dictionary[key] as? String
         }
         switch type {
-        case "hello": return .hello
+        case "hello":
+            if let client = dictionary["client"] as? String { return .clientHello(client: client) }
+            return .hello
         case "hello_ack": return .helloAck(agentVersion: try string("agent_version"))
+        case "pet_clicked": return .petClicked(eventID: try string("event_id"), petID: try string("pet_id"), conversationID: optionalString("conversation_id"))
+        case "conversation_rename": return .conversationRename(requestID: try string("request_id"), conversationID: try string("conversation_id"), title: try string("title"))
+        case "conversation_delete": return .conversationDelete(requestID: try string("request_id"), conversationID: try string("conversation_id"))
+        case "conversation_snapshot":
+            guard let recordsValue = dictionary["records"] else { throw PeppaIPCError.malformed("missing records") }
+            let records: [FatCatIPCConversationRecord] = try decodeValue(recordsValue, field: "records")
+            return .conversationSnapshot(selectedID: optionalString("selected_id"), records: records)
+        case "message_added":
+            guard let messageValue = dictionary["message"] else { throw PeppaIPCError.malformed("missing message") }
+            let message: FatCatIPCMessageRecord = try decodeValue(messageValue, field: "message")
+            return .messageAdded(conversationID: try string("conversation_id"), sessionID: try string("session_id"), message: message)
         case "new_session": return .newSession(requestID: try string("request_id"), conversationID: try string("conversation_id"), cwd: try string("cwd"))
         case "load_session": return .loadSession(requestID: try string("request_id"), conversationID: try string("conversation_id"), sessionID: try string("session_id"), cwd: try string("cwd"))
         case "list_sessions": return .listSessions(requestID: try string("request_id"), cwd: dictionary["cwd"] as? String)
@@ -114,7 +167,7 @@ public enum PeppaIPCCodec {
         case "session_list":
             guard let sessions = dictionary["sessions"] as? [[String: String]] else { throw PeppaIPCError.malformed("invalid session list") }
             return .sessionList(requestID: try string("request_id"), sessions: sessions)
-        case "user_message": return .userMessage(requestID: try string("request_id"), sessionID: try string("session_id"), text: try string("text"))
+        case "user_message": return .userMessage(requestID: try string("request_id"), conversationID: try string("conversation_id"), sessionID: try string("session_id"), text: try string("text"))
         case "cancel": return .cancel(requestID: try string("request_id"), sessionID: try string("session_id"))
         case "assistant_delta": return .assistantDelta(requestID: try string("request_id"), sessionID: try string("session_id"), text: try string("text"))
         case "plan":
@@ -166,7 +219,13 @@ public enum PeppaIPCCodec {
     private static func object(for message: PeppaIPCMessage) throws -> [String: Any] {
         switch message {
         case .hello: return ["version": 1, "type": "hello"]
+        case let .clientHello(client): return ["version": 1, "type": "hello", "client": client]
         case let .helloAck(agentVersion): return ["version": 1, "type": "hello_ack", "agent_version": agentVersion]
+        case let .petClicked(eventID, petID, conversationID): return ["version": 1, "type": "pet_clicked", "event_id": eventID, "pet_id": petID, "conversation_id": conversationID ?? NSNull()]
+        case let .conversationRename(requestID, conversationID, title): return ["version": 1, "type": "conversation_rename", "request_id": requestID, "conversation_id": conversationID, "title": title]
+        case let .conversationDelete(requestID, conversationID): return ["version": 1, "type": "conversation_delete", "request_id": requestID, "conversation_id": conversationID]
+        case let .conversationSnapshot(selectedID, records): return ["version": 1, "type": "conversation_snapshot", "selected_id": selectedID ?? NSNull(), "records": try encodeValue(records)]
+        case let .messageAdded(conversationID, sessionID, message): return ["version": 1, "type": "message_added", "conversation_id": conversationID, "session_id": sessionID, "message": try encodeValue(message)]
         case let .newSession(requestID, conversationID, cwd): return ["version": 1, "type": "new_session", "request_id": requestID, "conversation_id": conversationID, "cwd": cwd]
         case let .loadSession(requestID, conversationID, sessionID, cwd): return ["version": 1, "type": "load_session", "request_id": requestID, "conversation_id": conversationID, "session_id": sessionID, "cwd": cwd]
         case let .listSessions(requestID, cwd): return ["version": 1, "type": "list_sessions", "request_id": requestID, "cwd": cwd ?? NSNull()]
@@ -175,7 +234,7 @@ public enum PeppaIPCCodec {
         case let .sessionLoadFailed(requestID, conversationID, sessionID, message): return ["version": 1, "type": "session_load_failed", "request_id": requestID, "conversation_id": conversationID, "session_id": sessionID, "message": message]
         case let .sessionHistory(conversationID, sessionID, role, text): return ["version": 1, "type": "session_history", "conversation_id": conversationID, "session_id": sessionID, "role": role, "text": text]
         case let .sessionList(requestID, sessions): return ["version": 1, "type": "session_list", "request_id": requestID, "sessions": sessions]
-        case let .userMessage(requestID, sessionID, text): return ["version": 1, "type": "user_message", "request_id": requestID, "session_id": sessionID, "text": text]
+        case let .userMessage(requestID, conversationID, sessionID, text): return ["version": 1, "type": "user_message", "request_id": requestID, "conversation_id": conversationID, "session_id": sessionID, "text": text]
         case let .cancel(requestID, sessionID): return ["version": 1, "type": "cancel", "request_id": requestID, "session_id": sessionID]
         case let .observation(requestID, activeApp, window, visibleText, confidence): return ["version": 1, "type": "observation", "request_id": requestID ?? NSNull(), "active_app": activeApp, "window": window ?? NSNull(), "visible_text": visibleText, "confidence": confidence]
         case let .plan(requestID, sessionID, steps): return ["version": 1, "type": "plan", "request_id": requestID, "session_id": sessionID, "steps": steps]
@@ -212,5 +271,19 @@ public enum PeppaIPCCodec {
             if let nested = child as? [String: Any] { try rejectCredentials(in: nested, path: path + key + ".") }
             if let array = child as? [[String: Any]] { for item in array { try rejectCredentials(in: item, path: path + key + ".") } }
         }
+    }
+
+    private static func decodeValue<T: Decodable>(_ value: Any, field: String) throws -> T {
+        do {
+            let data = try JSONSerialization.data(withJSONObject: value)
+            return try JSONDecoder().decode(T.self, from: data)
+        } catch {
+            throw PeppaIPCError.malformed("invalid \(field)")
+        }
+    }
+
+    private static func encodeValue<T: Encodable>(_ value: T) throws -> Any {
+        let data = try JSONEncoder().encode(value)
+        return try JSONSerialization.jsonObject(with: data)
     }
 }
