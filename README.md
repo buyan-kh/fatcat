@@ -79,6 +79,20 @@ Start the LaunchAgent first with `./scripts/run-fatcat-macos.sh` or
 `FATCAT_AGENT_SOCKET` only when an explicit development socket override is
 needed.
 
+The native avatar opens the full Electron workspace on a double-click, and
+the FatCat menu bar menu includes **Open Electron Workspace**. A release
+installation resolves `FatCat Electron.app` beside `FatCat.app`; development
+and tests can point to any valid Electron bundle with
+`FATCAT_ELECTRON_APP_PATH=/absolute/path/to/FatCat\ Electron.app`. The native
+launcher focuses an existing Electron process when possible and never starts,
+stops, or reconnects the persistent FatCat Agent.
+
+Hermes assistant text is streamed incrementally to both clients. Each live
+chunk is tagged with its request and session, while restored session history
+is handled as a snapshot and cannot replace an active stream. A completed
+stream clears its cursor; a failed stream keeps the partial reply and shows
+the error.
+
 The Electron-only checks are available as `npm run electron:test` and
 `npm run electron:build`. The conditional real-agent smoke test creates a
 Hermes session without sending a paid model prompt, and is skipped unless

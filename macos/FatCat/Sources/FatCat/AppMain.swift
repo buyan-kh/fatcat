@@ -574,10 +574,11 @@ struct FatCatAvatarView: NSViewRepresentable {
     let flightCue: FlightCue?
     let reactionCue: ReactionCue?
     let onClick: () -> Void
+    let onDoubleClick: () -> Void
     let onDragBegan: () -> Void
     let onDragEnded: () -> Void
 
-    func makeCoordinator() -> Coordinator { Coordinator(onClick: onClick) }
+    func makeCoordinator() -> Coordinator { Coordinator(onClick: onClick, onDoubleClick: onDoubleClick) }
 
     func makeNSView(context: Context) -> WKWebView {
         let configuration = WKWebViewConfiguration()
@@ -605,6 +606,7 @@ struct FatCatAvatarView: NSViewRepresentable {
         webView.onDragEnded = onDragEnded
         context.coordinator.webView = webView
         context.coordinator.animationKey = animationKey
+        context.coordinator.onDoubleClick = onDoubleClick
         return webView
     }
 
@@ -612,6 +614,7 @@ struct FatCatAvatarView: NSViewRepresentable {
         context.coordinator.webView = webView
         context.coordinator.animationKey = animationKey
         context.coordinator.onClick = onClick
+        context.coordinator.onDoubleClick = onDoubleClick
         (webView as? FatCatAvatarWebView)?.onDragBegan = onDragBegan
         (webView as? FatCatAvatarWebView)?.onDragEnded = onDragEnded
         context.coordinator.pushAnimationIfReady()
@@ -627,13 +630,19 @@ struct FatCatAvatarView: NSViewRepresentable {
         weak var webView: WKWebView?
         var animationKey = "idle"
         var onClick: () -> Void
+        var onDoubleClick: () -> Void
+        private var clickInterpreter = FatCatAvatarClickInterpreter(doubleClickInterval: NSEvent.doubleClickInterval)
+        private var pendingSingleClick: DispatchWorkItem?
         private var isSurfaceReady = false
         private var lastFlightRevision = 0
         private var pendingFlightCue: FlightCue?
         private var lastReactionRevision = 0
         private var pendingReactionCue: ReactionCue?
 
-        init(onClick: @escaping () -> Void) { self.onClick = onClick }
+        init(onClick: @escaping () -> Void, onDoubleClick: @escaping () -> Void) {
+            self.onClick = onClick
+            self.onDoubleClick = onDoubleClick
+        }
 
         func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction, decisionHandler: @escaping @MainActor @Sendable (WKNavigationActionPolicy) -> Void) {
             decisionHandler(FatCatAvatarNavigation.allows(navigationAction.request.url) ? .allow : .cancel)
@@ -650,7 +659,22 @@ struct FatCatAvatarView: NSViewRepresentable {
                 isSurfaceReady = true
                 pushAnimationIfReady()
             } else if type == "click" {
-                onClick()
+                let result = clickInterpreter.recordClick(at: ProcessInfo.processInfo.systemUptime)
+                pendingSingleClick?.cancel()
+                switch result {
+                case .pendingSingle:
+                    let work = DispatchWorkItem { [weak self] in
+                        guard let self else { return }
+                        if self.clickInterpreter.consumePendingSingle() == .single { self.onClick() }
+                    }
+                    pendingSingleClick = work
+                    DispatchQueue.main.asyncAfter(deadline: .now() + NSEvent.doubleClickInterval, execute: work)
+                case .double:
+                    pendingSingleClick = nil
+                    onDoubleClick()
+                case .single:
+                    onClick()
+                }
             }
         }
 
@@ -1572,6 +1596,7 @@ final class FatCatFlightController {
 struct PetRootView: View {
     @ObservedObject var model: PetModel
     let onClick: () -> Void
+    let onDoubleClick: () -> Void
     let onDragBegan: () -> Void
     let onDragEnded: () -> Void
 
@@ -1581,6 +1606,7 @@ struct PetRootView: View {
             flightCue: model.flightCue,
             reactionCue: model.reactionCue,
             onClick: onClick,
+            onDoubleClick: onDoubleClick,
             onDragBegan: onDragBegan,
             onDragEnded: onDragEnded
         )
@@ -1688,10 +1714,52 @@ final class FatCatMiniChatPanel: NSPanel {
 }
 
 @MainActor
+final class FatCatElectronWorkspaceLauncher {
+    func openOrFocus() {
+        let resolution = FatCatElectronPathResolver.resolve(
+            overridePath: ProcessInfo.processInfo.environment["FATCAT_ELECTRON_APP_PATH"],
+            nativeBundleURL: Bundle.main.bundleURL
+        )
+        switch resolution {
+        case .unavailable(let message):
+            showError(message)
+        case .success(let appURL):
+            let workspace = NSWorkspace.shared
+            if let running = workspace.runningApplications.first(where: {
+                $0.bundleURL?.standardizedFileURL == appURL.standardizedFileURL
+            }) {
+                running.activate(options: [.activateAllWindows, .activateIgnoringOtherApps])
+                return
+            }
+            let configuration = NSWorkspace.OpenConfiguration()
+            configuration.activates = true
+            workspace.openApplication(at: appURL, configuration: configuration) { [weak self] app, error in
+                DispatchQueue.main.async {
+                    if let error {
+                        self?.showError("Could not open Electron workspace: \(error.localizedDescription)")
+                    } else {
+                        app?.activate(options: [.activateAllWindows, .activateIgnoringOtherApps])
+                    }
+                }
+            }
+        }
+    }
+
+    private func showError(_ message: String) {
+        let alert = NSAlert()
+        alert.messageText = "Electron workspace unavailable"
+        alert.informativeText = message
+        alert.alertStyle = .warning
+        alert.runModal()
+    }
+}
+
+@MainActor
 final class PetWindowController: NSObject, NSWindowDelegate {
     private let perception: ScreenPerceptionCoordinator
     private let model = PetModel()
     private let agent = FatCatAgentClient()
+    private let electronLauncher = FatCatElectronWorkspaceLauncher()
     private let positionStore = PetPositionStore()
     private let petSettingsStore = FatCatPetSettingsStore()
     private var auditStore: FatCatAuditStore?
@@ -1817,6 +1885,7 @@ final class PetWindowController: NSObject, NSWindowDelegate {
         panel.contentView = NSHostingView(rootView: PetRootView(
             model: model,
             onClick: { [weak self] in self?.toggleMiniChat() },
+            onDoubleClick: { [weak self] in self?.openOrFocusElectron() },
             onDragBegan: { [weak self] in self?.flightController.handleDragBegan() },
             onDragEnded: { [weak self] in self?.flightController.handleDragEnded() }
         ))
@@ -1853,6 +1922,10 @@ final class PetWindowController: NSObject, NSWindowDelegate {
     private func toggleMiniChat() {
         agent.petClicked(conversationID: model.selectedConversationID)
         if model.isChatOpen { closeChat() } else { openChat() }
+    }
+
+    private func openOrFocusElectron() {
+        electronLauncher.openOrFocus()
     }
 
     private func openChat() {
@@ -2385,6 +2458,7 @@ final class PetWindowController: NSObject, NSWindowDelegate {
         menu.addItem(NSMenuItem(title: "Focus Composer", action: #selector(focusComposerFromMenu), keyEquivalent: "l"))
         menu.addItem(NSMenuItem(title: "Copy Last Response", action: #selector(copyLastResponseFromMenu), keyEquivalent: "c"))
         menu.items[3].keyEquivalentModifierMask = [.command, .shift]
+        menu.addItem(NSMenuItem(title: "Open Electron Workspace", action: #selector(openElectronWorkspaceFromMenu), keyEquivalent: ""))
         menu.addItem(.separator())
         menu.addItem(NSMenuItem(title: perception.isPaused ? "Resume Observation" : "Pause Observation", action: #selector(toggleObservation), keyEquivalent: ""))
         let lockItem = NSMenuItem(title: "Lock Position", action: #selector(togglePositionLock), keyEquivalent: "")
@@ -2408,6 +2482,8 @@ final class PetWindowController: NSObject, NSWindowDelegate {
     @objc private func searchConversationsFromMenu() { openChat(); model.isShowingHistory = true }
 
     @objc private func focusComposerFromMenu() { openChat(); model.focusComposerToken += 1 }
+
+    @objc private func openElectronWorkspaceFromMenu() { openOrFocusElectron() }
 
     @objc private func copyLastResponseFromMenu() {
         guard let text = model.messages.last(where: { $0.role == .assistant })?.text else { return }
