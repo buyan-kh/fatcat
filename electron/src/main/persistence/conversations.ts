@@ -42,7 +42,15 @@ export class ConversationRepository {
   static async open(filePath: string): Promise<ConversationRepository> {
     try {
       const contents = await readFile(filePath, 'utf8')
-      return new ConversationRepository(filePath, documentSchema.parse(JSON.parse(contents)))
+      const raw = JSON.parse(contents) as unknown
+      const document = documentSchema.parse(raw)
+      // Conversation records are metadata-only. Rewrite older documents that
+      // embedded transcript bodies so Electron cannot become a second history
+      // store alongside Hermes.
+      if (JSON.stringify(raw) !== JSON.stringify(document)) {
+        await atomicWrite(filePath, JSON.stringify(document, null, 2))
+      }
+      return new ConversationRepository(filePath, document)
     } catch (error) {
       if (isMissingFile(error)) return new ConversationRepository(filePath, emptyDocument())
       await quarantine(filePath)

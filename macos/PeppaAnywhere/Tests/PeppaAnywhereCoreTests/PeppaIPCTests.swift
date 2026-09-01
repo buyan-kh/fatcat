@@ -120,6 +120,16 @@ struct PeppaIPCTests {
         #expect(try PeppaIPCCodec.decodeLine(PeppaIPCCodec.encode(message: .hermesEvent(event))) == .hermesEvent(event))
     }
 
+    @Test func acceptsStructuredHermesEventDetails() throws {
+        let line = #"{"version":2,"event_id":"event-2","kind":"session.state","session_id":"session-1","request_id":"request-1","summary":"Plan available","details":{"steps":["Inspect context","Explain next step"]}}"#
+        let decoded = try PeppaIPCCodec.decodeLine(Data((line + "\n").utf8))
+        guard case let .hermesEvent(event) = decoded else {
+            Issue.record("Expected a generic Hermes event")
+            return
+        }
+        #expect(event.details["steps"] == "[\"Inspect context\",\"Explain next step\"]")
+    }
+
     @Test func roundTripsConversationLifecycleAndCancellation() throws {
         let messages: [PeppaIPCMessage] = [
             .newSession(requestID: "r1", conversationID: "c1", cwd: "/Users/me/Code"),

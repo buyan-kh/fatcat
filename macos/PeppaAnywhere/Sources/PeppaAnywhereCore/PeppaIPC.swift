@@ -158,8 +158,19 @@ public enum PeppaIPCCodec {
                   let eventID = dictionary["event_id"] as? String,
                   let sessionID = dictionary["session_id"] as? String,
                   let summary = dictionary["summary"] as? String,
-                  let details = dictionary["details"] as? [String: String] else {
+                  let rawDetails = dictionary["details"] as? [String: Any] else {
                 throw PeppaIPCError.malformed("invalid Hermes event")
+            }
+            let details = try rawDetails.reduce(into: [String: String]()) { result, entry in
+                let (key, value) = entry
+                if let string = value as? String {
+                    result[key] = string
+                } else if (value is [Any] || value is [String: Any]), JSONSerialization.isValidJSONObject(value) {
+                    let encoded = try JSONSerialization.data(withJSONObject: value, options: [.sortedKeys])
+                    result[key] = String(decoding: encoded, as: UTF8.self)
+                } else {
+                    result[key] = String(describing: value)
+                }
             }
             return .hermesEvent(FatCatHermesEvent(
                 eventID: eventID,

@@ -52,6 +52,7 @@ export type TurnActivity = {
   arguments?: Record<string, string>
   steps?: string[]
   status: TurnState
+  approval?: { proposalId: string; risk: string }
 }
 
 export type ChatMessage = {

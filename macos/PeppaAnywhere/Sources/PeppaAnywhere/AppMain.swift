@@ -2197,17 +2197,41 @@ final class PetWindowController: NSObject, NSWindowDelegate {
             model.appendSystem("Memory updated: \(detail)")
         case let .hermesEvent(event):
             guard isActiveSession(event.sessionID) else { return }
-            model.appendSystem(event.summary)
             switch event.kind {
-            case "message.started", "message.delta": model.handleLife(.hermes(.thought))
-            case "message.completed": model.handleLife(.hermes(.turnCompleted))
-            case "tool.started", "tool.progress": model.handleLife(.hermes(.toolCall(name: event.details["tool"] ?? "")))
-            case "tool.needs_approval", "native_action.approval_requested": model.handleLife(.hermes(.permissionRequested))
-            case "tool.completed", "native_action.result": model.handleLife(.hermes(.actionSucceeded))
-            case "tool.failed": model.handleLife(.hermes(.actionFailed))
-            case "verification.completed": model.handleLife(.hermes(event.details["success"] == "true" ? .verifiedSuccess : .verifiedFailure))
-            case "memory.updated": break
-            default: break
+            case "message.started":
+                let requestID = event.requestID ?? event.eventID
+                model.beginAssistant(requestID: requestID)
+                model.handleLife(.hermes(.thought))
+            case "message.delta":
+                let requestID = event.requestID ?? event.eventID
+                model.appendAssistant(event.details["text"] ?? event.summary, requestID: requestID)
+                model.handleLife(.hermes(.streamDelta))
+            case "message.completed":
+                if let requestID = event.requestID { model.completeAssistant(requestID: requestID) }
+                model.handleLife(.hermes(.turnCompleted))
+            case "session.state":
+                if let rawState = event.details["state"], let state = PeppaAgentState(rawValue: rawState) {
+                    handleAgentState(state, requestID: event.requestID)
+                }
+            case "tool.started", "tool.progress":
+                model.appendSystem(event.summary)
+                model.handleLife(.hermes(.toolCall(name: event.details["tool"] ?? "")))
+            case "tool.needs_approval", "native_action.approval_requested":
+                model.appendSystem(event.summary)
+                model.handleLife(.hermes(.permissionRequested))
+            case "tool.completed", "native_action.result":
+                model.appendSystem(event.summary)
+                model.handleLife(.hermes(.actionSucceeded))
+            case "tool.failed":
+                model.appendSystem(event.summary)
+                model.handleLife(.hermes(.actionFailed))
+            case "verification.completed":
+                model.appendSystem(event.summary)
+                model.handleLife(.hermes(event.details["success"] == "true" ? .verifiedSuccess : .verifiedFailure))
+            case "memory.updated":
+                model.appendSystem("Memory updated: \(event.summary)")
+            default:
+                model.appendSystem(event.summary)
             }
         case let .state(state):
             handleAgentState(state)

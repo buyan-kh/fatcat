@@ -153,10 +153,10 @@ execute OS mutations directly or bypass that handshake.
             for key, value in arguments.items()
         }
         _reject_credentials(safe_arguments)
-        self.emit_sync(_hermes_event("tool.started", self.session_id, tool_call_id, f"Started {name}", {"tool": name, **safe_arguments}))
+        self.emit_sync(_hermes_event("tool.started", self.session_id, self.current_request_id, f"Started {name}", {"tool": name, "tool_call_id": tool_call_id, **safe_arguments}))
 
     def _tool_completed(self, tool_call_id: str, name: str, arguments: dict[str, Any], result: Any) -> None:
-        self.emit_sync(_hermes_event("tool.completed", self.session_id, tool_call_id, f"Completed {name}", {"tool": name, "success": True}))
+        self.emit_sync(_hermes_event("tool.completed", self.session_id, self.current_request_id, f"Completed {name}", {"tool": name, "tool_call_id": tool_call_id, "success": True}))
 
     def _run(self, request_id: str, text: str) -> bool:
         def stream_delta(delta: str) -> None:
@@ -236,7 +236,7 @@ class _FatCatACPBridge:
             _reject_credentials(safe_arguments)
             tool_id = str(getattr(update, "tool_call_id", request_id))
             name = str(getattr(update, "title", "tool"))
-            await session.emit(_hermes_event("tool.started", session_id, tool_id, f"Started {name}", {"tool": name, **safe_arguments}))
+            await session.emit(_hermes_event("tool.started", session_id, request_id, f"Started {name}", {"tool": name, "tool_call_id": tool_id, **safe_arguments}))
         elif kind == "tool_call_update":
             status = str(getattr(getattr(update, "status", None), "value", getattr(update, "status", "")))
             if status in {"completed", "failed"}:
@@ -244,9 +244,9 @@ class _FatCatACPBridge:
                 await session.emit(_hermes_event(
                     "tool.completed" if status == "completed" else "tool.failed",
                     session_id,
-                    tool_id,
+                    request_id,
                     f"Tool call {status}.",
-                    {"status": status},
+                    {"status": status, "tool_call_id": tool_id},
                 ))
 
     async def request_permission(self, options: list[Any], session_id: str, tool_call: Any, **kwargs: Any) -> Any:
@@ -260,7 +260,12 @@ class _FatCatACPBridge:
                 session_id,
                 proposal_id,
                 str(getattr(tool_call, "title", "native action")),
-                {"risk": "high", "reason": "FatCat Agent requested a native action approval."},
+                {
+                    "risk": "high",
+                    "proposal_id": proposal_id,
+                    "request_id": session.current_request_id,
+                    "reason": "FatCat Agent requested a native action approval.",
+                },
             ))
         try:
             approved = await asyncio.wait_for(future, timeout=60)
@@ -495,6 +500,17 @@ class PeppaAgentServer:
             self.sessions[session_id] = PeppaAgentSession(
                 session_id, cwd, self.broadcast, self.loop or asyncio.get_running_loop(), state, manager, self.acp_agent
             )
+            for item in state.history:
+                role = item.get("role") if isinstance(item, dict) else None
+                text = item.get("content") if isinstance(item, dict) else None
+                if role in {"user", "assistant", "system"} and isinstance(text, str) and text:
+                    await self.broadcast(_event(
+                        "session_history",
+                        conversation_id=conversation_id,
+                        session_id=session_id,
+                        role=role,
+                        text=text,
+                    ))
             await self.broadcast(_event("conversation_snapshot", **self.conversation_store.snapshot()))
             return _event("session_loaded", request_id=request_id, conversation_id=conversation_id, session_id=session_id)
         if message_type == "list_sessions":

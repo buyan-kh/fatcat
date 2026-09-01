@@ -1,4 +1,4 @@
-import { mkdtemp, readdir, writeFile } from 'node:fs/promises'
+import { mkdtemp, readFile, readdir, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { beforeEach, describe, expect, it } from 'vitest'
@@ -60,5 +60,26 @@ describe('ConversationRepository', () => {
     const repository = await ConversationRepository.open(filePath)
     await expect(repository.select('missing')).rejects.toThrow('Conversation not found')
     await expect(repository.create('   ', '/tmp/project')).rejects.toThrow('Conversation title is required')
+  })
+
+  it('retires legacy transcript bodies when opening conversation metadata', async () => {
+    await writeFile(filePath, JSON.stringify({
+      selectedId: 'chat-1',
+      records: [{
+        id: 'chat-1',
+        title: 'Legacy chat',
+        createdAt: '2026-01-01T00:00:00.000Z',
+        updatedAt: '2026-01-01T00:00:00.000Z',
+        lastPreview: 'last answer',
+        workspacePath: '/tmp/project',
+        hermesSessionId: 'hermes-1',
+        messages: [{ role: 'user', text: 'private transcript' }],
+      }],
+    }))
+
+    const repository = await ConversationRepository.open(filePath)
+
+    expect((await repository.snapshot()).records[0]).not.toHaveProperty('messages')
+    expect(JSON.parse(await readFile(filePath, 'utf8'))).not.toMatchObject({ records: [{ messages: expect.anything() }] })
   })
 })
