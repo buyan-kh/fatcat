@@ -400,6 +400,7 @@ class PeppaAgentServer:
             self.sessions[state.session_id] = PeppaAgentSession(
                 state.session_id, cwd, self.broadcast, self.loop or asyncio.get_running_loop(), state, manager, self.acp_agent
             )
+            await self.broadcast(_event("conversation_snapshot", **self.conversation_store.snapshot()))
             return _event("session_ready", request_id=str(message.get("request_id") or uuid.uuid4()), conversation_id=conversation_id, session_id=state.session_id)
         if message_type == "load_session":
             manager = self._require_session_manager()
@@ -423,6 +424,7 @@ class PeppaAgentServer:
             self.sessions[session_id] = PeppaAgentSession(
                 session_id, cwd, self.broadcast, self.loop or asyncio.get_running_loop(), state, manager, self.acp_agent
             )
+            await self.broadcast(_event("conversation_snapshot", **self.conversation_store.snapshot()))
             for item in state.history:
                 role = str(item.get("role") or "")
                 text = item.get("content")

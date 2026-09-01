@@ -111,7 +111,7 @@ export class FatCatService extends EventEmitter {
     const requestId = randomUUID()
     this.activeRequestId = requestId
     this.retryPrompt = normalized
-    this.messages.push(message('user', normalized))
+    this.messages.push(message('user', normalized, undefined, requestId))
     this.transport.send({ version: 1, type: 'user_message', request_id: requestId, session_id: record.hermesSessionId, text: normalized })
     await this.options.repository.update(record.id, { lastPreview: normalized })
     await this.emitSnapshot()
@@ -179,10 +179,40 @@ export class FatCatService extends EventEmitter {
 
   private async handleAgentEvent(event: AgentEvent): Promise<void> {
     if ('request_id' in event && event.request_id && this.ignoredRequestIds.has(event.request_id)) return
+    if (event.type === 'conversation_snapshot') {
+      const now = new Date().toISOString()
+      await this.options.repository.replace({
+        selectedId: event.selected_id,
+        records: event.records.map((record) => ({
+          id: record.id,
+          hermesSessionId: record.session_id ?? undefined,
+          title: record.title,
+          createdAt: now,
+          updatedAt: now,
+          lastPreview: record.messages.at(-1)?.text ?? '',
+          workspacePath: record.workspace_path,
+        })),
+      })
+      const selected = event.records.find((record) => record.id === event.selected_id)
+      this.messages = (selected?.messages ?? []).map((item) => message(item.role, item.text, undefined, item.id))
+      this.activeRequestId = null
+      await this.emitSnapshot()
+      return
+    }
     const document = await this.options.repository.snapshot()
     const selected = document.records.find((record) => record.id === document.selectedId)
 
     switch (event.type) {
+      case 'message_added':
+        if (event.conversation_id !== document.selectedId || event.session_id !== selected?.hermesSessionId) return
+        if (!this.messages.some((item) => item.id === event.message.id)) {
+          this.messages.push(message(event.message.role, event.message.text, undefined, event.message.id))
+        }
+        if (event.message.role === 'user') {
+          this.activeRequestId = event.message.id
+          this.retryPrompt = event.message.text
+        }
+        break
       case 'session_ready':
         if (event.conversation_id !== document.selectedId) return
         await this.options.repository.attachSession(event.conversation_id, event.session_id)
@@ -202,7 +232,9 @@ export class FatCatService extends EventEmitter {
         if (event.role === 'user') this.retryPrompt = event.text
         break
       case 'assistant_delta': {
-        if (event.session_id !== selected?.hermesSessionId || event.request_id !== this.activeRequestId) return
+        if (event.session_id !== selected?.hermesSessionId) return
+        if (this.activeRequestId && event.request_id !== this.activeRequestId) return
+        this.activeRequestId ??= event.request_id
         const assistant = this.ensureAssistant(event.request_id)
         assistant.text += event.text
         assistant.isStreaming = true
@@ -229,7 +261,9 @@ export class FatCatService extends EventEmitter {
         break
       }
       case 'state':
-        if (!event.request_id || event.request_id !== this.activeRequestId || (event.session_id && event.session_id !== selected?.hermesSessionId)) return
+        if (!event.request_id || (event.session_id && event.session_id !== selected?.hermesSessionId)) return
+        if (this.activeRequestId && event.request_id !== this.activeRequestId) return
+        this.activeRequestId ??= event.request_id
         this.applyTurnState(event.request_id, event.state)
         if (event.state === 'completed' || event.state === 'failed' || event.state === 'error') {
           const assistant = [...this.messages].reverse().find((item) => item.requestId === event.request_id && item.role === 'assistant')
@@ -304,8 +338,8 @@ export class FatCatService extends EventEmitter {
   }
 }
 
-function message(role: ChatMessage['role'], text: string, requestId?: string): ChatMessage {
-  return { id: randomUUID(), role, text, requestId, isStreaming: false, activities: [] }
+function message(role: ChatMessage['role'], text: string, requestId?: string, id: string = randomUUID()): ChatMessage {
+  return { id, role, text, requestId, isStreaming: false, activities: [] }
 }
 
 function normalizeTurnState(value: string): TurnState | null {
