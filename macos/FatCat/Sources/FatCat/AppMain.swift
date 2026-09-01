@@ -574,10 +574,11 @@ struct FatCatAvatarView: NSViewRepresentable {
     let flightCue: FlightCue?
     let reactionCue: ReactionCue?
     let onClick: () -> Void
+    let onDoubleClick: () -> Void
     let onDragBegan: () -> Void
     let onDragEnded: () -> Void
 
-    func makeCoordinator() -> Coordinator { Coordinator(onClick: onClick) }
+    func makeCoordinator() -> Coordinator { Coordinator(onClick: onClick, onDoubleClick: onDoubleClick) }
 
     func makeNSView(context: Context) -> WKWebView {
         let configuration = WKWebViewConfiguration()
@@ -605,6 +606,7 @@ struct FatCatAvatarView: NSViewRepresentable {
         webView.onDragEnded = onDragEnded
         context.coordinator.webView = webView
         context.coordinator.animationKey = animationKey
+        context.coordinator.onDoubleClick = onDoubleClick
         return webView
     }
 
@@ -612,6 +614,7 @@ struct FatCatAvatarView: NSViewRepresentable {
         context.coordinator.webView = webView
         context.coordinator.animationKey = animationKey
         context.coordinator.onClick = onClick
+        context.coordinator.onDoubleClick = onDoubleClick
         (webView as? FatCatAvatarWebView)?.onDragBegan = onDragBegan
         (webView as? FatCatAvatarWebView)?.onDragEnded = onDragEnded
         context.coordinator.pushAnimationIfReady()
@@ -627,13 +630,19 @@ struct FatCatAvatarView: NSViewRepresentable {
         weak var webView: WKWebView?
         var animationKey = "idle"
         var onClick: () -> Void
+        var onDoubleClick: () -> Void
+        private var clickInterpreter = FatCatAvatarClickInterpreter(doubleClickInterval: NSEvent.doubleClickInterval)
+        private var pendingSingleClick: DispatchWorkItem?
         private var isSurfaceReady = false
         private var lastFlightRevision = 0
         private var pendingFlightCue: FlightCue?
         private var lastReactionRevision = 0
         private var pendingReactionCue: ReactionCue?
 
-        init(onClick: @escaping () -> Void) { self.onClick = onClick }
+        init(onClick: @escaping () -> Void, onDoubleClick: @escaping () -> Void) {
+            self.onClick = onClick
+            self.onDoubleClick = onDoubleClick
+        }
 
         func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction, decisionHandler: @escaping @MainActor @Sendable (WKNavigationActionPolicy) -> Void) {
             decisionHandler(FatCatAvatarNavigation.allows(navigationAction.request.url) ? .allow : .cancel)
@@ -650,7 +659,22 @@ struct FatCatAvatarView: NSViewRepresentable {
                 isSurfaceReady = true
                 pushAnimationIfReady()
             } else if type == "click" {
-                onClick()
+                let result = clickInterpreter.recordClick(at: ProcessInfo.processInfo.systemUptime)
+                pendingSingleClick?.cancel()
+                switch result {
+                case .pendingSingle:
+                    let work = DispatchWorkItem { [weak self] in
+                        guard let self else { return }
+                        if self.clickInterpreter.consumePendingSingle() == .single { self.onClick() }
+                    }
+                    pendingSingleClick = work
+                    DispatchQueue.main.asyncAfter(deadline: .now() + NSEvent.doubleClickInterval, execute: work)
+                case .double:
+                    pendingSingleClick = nil
+                    onDoubleClick()
+                case .single:
+                    onClick()
+                }
             }
         }
 
@@ -1572,6 +1596,7 @@ final class FatCatFlightController {
 struct PetRootView: View {
     @ObservedObject var model: PetModel
     let onClick: () -> Void
+    let onDoubleClick: () -> Void
     let onDragBegan: () -> Void
     let onDragEnded: () -> Void
 
@@ -1581,6 +1606,7 @@ struct PetRootView: View {
             flightCue: model.flightCue,
             reactionCue: model.reactionCue,
             onClick: onClick,
+            onDoubleClick: onDoubleClick,
             onDragBegan: onDragBegan,
             onDragEnded: onDragEnded
         )
@@ -1688,10 +1714,52 @@ final class FatCatMiniChatPanel: NSPanel {
 }
 
 @MainActor
+final class FatCatElectronWorkspaceLauncher {
+    func openOrFocus() {
+        let resolution = FatCatElectronPathResolver.resolve(
+            overridePath: ProcessInfo.processInfo.environment["FATCAT_ELECTRON_APP_PATH"],
+            nativeBundleURL: Bundle.main.bundleURL
+        )
+        switch resolution {
+        case .unavailable(let message):
+            showError(message)
+        case .success(let appURL):
+            let workspace = NSWorkspace.shared
+            if let running = workspace.runningApplications.first(where: {
+                $0.bundleURL?.standardizedFileURL == appURL.standardizedFileURL
+            }) {
+                running.activate(options: [.activateAllWindows, .activateIgnoringOtherApps])
+                return
+            }
+            let configuration = NSWorkspace.OpenConfiguration()
+            configuration.activates = true
+            workspace.openApplication(at: appURL, configuration: configuration) { [weak self] app, error in
+                DispatchQueue.main.async {
+                    if let error {
+                        self?.showError("Could not open Electron workspace: \(error.localizedDescription)")
+                    } else {
+                        app?.activate(options: [.activateAllWindows, .activateIgnoringOtherApps])
+                    }
+                }
+            }
+        }
+    }
+
+    private func showError(_ message: String) {
+        let alert = NSAlert()
+        alert.messageText = "Electron workspace unavailable"
+        alert.informativeText = message
+        alert.alertStyle = .warning
+        alert.runModal()
+    }
+}
+
+@MainActor
 final class PetWindowController: NSObject, NSWindowDelegate {
     private let perception: ScreenPerceptionCoordinator
     private let model = PetModel()
     private let agent = FatCatAgentClient()
+    private let electronLauncher = FatCatElectronWorkspaceLauncher()
     private let positionStore = PetPositionStore()
     private let petSettingsStore = FatCatPetSettingsStore()
     private var auditStore: FatCatAuditStore?
@@ -1705,6 +1773,8 @@ final class PetWindowController: NSObject, NSWindowDelegate {
     private var pendingPrompts: [PendingPrompt] = []
     private var pendingSessionConversationID: String?
     private var ignoredRequestIDs = Set<String>()
+    private var finishedRequestIDs = Set<String>()
+    private var historyGate = FatCatSessionHistoryGate()
     private var lastSpokenRequestID: String?
     private var activeSessionID: String?
     private var lastObservedApp: String?
@@ -1815,6 +1885,7 @@ final class PetWindowController: NSObject, NSWindowDelegate {
         panel.contentView = NSHostingView(rootView: PetRootView(
             model: model,
             onClick: { [weak self] in self?.toggleMiniChat() },
+            onDoubleClick: { [weak self] in self?.openOrFocusElectron() },
             onDragBegan: { [weak self] in self?.flightController.handleDragBegan() },
             onDragEnded: { [weak self] in self?.flightController.handleDragEnded() }
         ))
@@ -1851,6 +1922,10 @@ final class PetWindowController: NSObject, NSWindowDelegate {
     private func toggleMiniChat() {
         agent.petClicked(conversationID: model.selectedConversationID)
         if model.isChatOpen { closeChat() } else { openChat() }
+    }
+
+    private func openOrFocusElectron() {
+        electronLauncher.openOrFocus()
     }
 
     private func openChat() {
@@ -2060,6 +2135,7 @@ final class PetWindowController: NSObject, NSWindowDelegate {
         model.chatScrollState.opened()
         activeSessionID = record.hermesSessionID
         if let sessionID = record.hermesSessionID {
+            historyGate.begin(sessionID: sessionID)
             agent.loadSession(conversationID: record.id, sessionID: sessionID, cwd: record.workspacePath)
         } else if !record.lastPreview.isEmpty {
             model.appendSystem("This older conversation has no saved Hermes session. Start a new chat to continue it.")
@@ -2102,6 +2178,7 @@ final class PetWindowController: NSObject, NSWindowDelegate {
         model.retryState.clear()
         model.chatScrollState.opened()
         activeSessionID = sessionID
+        historyGate.begin(sessionID: sessionID)
         agent.loadSession(conversationID: record.id, sessionID: sessionID, cwd: record.workspacePath)
     }
 
@@ -2120,6 +2197,8 @@ final class PetWindowController: NSObject, NSWindowDelegate {
     private func handleAgentMessage(_ message: FatCatIPCMessage) {
         switch message {
         case let .conversationSnapshot(selectedID, records):
+            let previousSelectedID = model.selectedConversationID
+            let previousSessionID = activeSessionID
             let now = Date()
             let mapped = records.map { record in
                 FatCatConversationRecord(
@@ -2142,16 +2221,22 @@ final class PetWindowController: NSObject, NSWindowDelegate {
             model.selectedConversationID = effectiveSelectedID
             guard let selected = records.first(where: { $0.id == effectiveSelectedID }) else {
                 activeSessionID = nil
+                historyGate = FatCatSessionHistoryGate()
                 model.replaceMessages([])
+                return
+            }
+            if effectiveSelectedID == previousSelectedID, selected.sessionID == previousSessionID {
                 return
             }
             model.replaceMessages([])
             guard let sessionID = selected.sessionID, !sessionID.isEmpty else {
                 activeSessionID = nil
+                historyGate = FatCatSessionHistoryGate()
                 return
             }
             if activeSessionID != sessionID {
                 activeSessionID = sessionID
+                historyGate.begin(sessionID: sessionID)
                 agent.loadSession(conversationID: selected.id, sessionID: sessionID, cwd: selected.workspacePath)
             }
         case let .messageAdded(conversationID, sessionID, message):
@@ -2164,7 +2249,7 @@ final class PetWindowController: NSObject, NSWindowDelegate {
                 model.appendSystem(message.text)
             }
         case let .assistantDelta(requestID, sessionID, text):
-            guard isActiveSession(sessionID), !ignoredRequestIDs.contains(requestID) else { return }
+            guard isActiveSession(sessionID), acceptsLiveRequest(requestID) else { return }
             model.handleLife(.hermes(.streamDelta))
             if model.currentRequestID != requestID { model.beginAssistant(requestID: requestID) }
             model.appendAssistant(text, requestID: requestID)
@@ -2208,15 +2293,19 @@ final class PetWindowController: NSObject, NSWindowDelegate {
             guard isActiveSession(event.sessionID) else { return }
             switch event.kind {
             case "message.started":
-                let requestID = event.requestID ?? event.eventID
+                guard let requestID = event.requestID, acceptsLiveRequest(requestID) else { return }
+                finishedRequestIDs.remove(requestID)
                 model.beginAssistant(requestID: requestID)
                 model.handleLife(.hermes(.thought))
             case "message.delta":
-                let requestID = event.requestID ?? event.eventID
+                guard let requestID = event.requestID, acceptsLiveRequest(requestID) else { return }
                 model.appendAssistant(event.details["text"] ?? event.summary, requestID: requestID)
                 model.handleLife(.hermes(.streamDelta))
             case "message.completed":
-                if let requestID = event.requestID { model.completeAssistant(requestID: requestID) }
+                guard let requestID = event.requestID, model.currentRequestID == requestID,
+                      !finishedRequestIDs.contains(requestID) else { return }
+                finishedRequestIDs.insert(requestID)
+                model.completeAssistant(requestID: requestID)
                 model.handleLife(.hermes(.turnCompleted))
             case "session.state":
                 if let rawState = event.details["state"], let state = FatCatAgentState(rawValue: rawState) {
@@ -2246,6 +2335,7 @@ final class PetWindowController: NSObject, NSWindowDelegate {
             handleAgentState(state)
         case let .sessionState(state, sessionID, requestID):
             guard isActiveSession(sessionID) else { return }
+            if let requestID, !acceptsLiveRequest(requestID), state != .ready { return }
             if let requestID, let currentRequestID = model.currentRequestID,
                requestID != currentRequestID, [.completed, .failed, .stopping].contains(state) { return }
             handleAgentState(state, requestID: requestID)
@@ -2255,6 +2345,7 @@ final class PetWindowController: NSObject, NSWindowDelegate {
             if let requestID = model.currentRequestID,
                model.messages.contains(where: { $0.requestID == requestID }) {
                 model.failAssistant(requestID: requestID, message: message)
+                finishedRequestIDs.insert(requestID)
             } else {
                 model.appendSystem(message)
                 model.isGenerating = false
@@ -2276,6 +2367,7 @@ final class PetWindowController: NSObject, NSWindowDelegate {
         case let .sessionLoaded(_, conversationID, sessionID):
             guard conversationID == model.selectedConversationID else { return }
             activeSessionID = sessionID
+            historyGate.finish(sessionID: sessionID)
             model.resumeError = nil
             try? conversationStore.attachHermesSession(sessionID, to: conversationID)
             model.conversations = conversationStore.records
@@ -2284,8 +2376,9 @@ final class PetWindowController: NSObject, NSWindowDelegate {
             activeSessionID = nil
             model.resumeError = message
             model.appendSystem(message)
-        case let .sessionHistory(conversationID, _, role, text):
-            guard conversationID == model.selectedConversationID else { return }
+        case let .sessionHistory(conversationID, sessionID, role, text):
+            guard conversationID == model.selectedConversationID, sessionID == activeSessionID,
+                  historyGate.accepts(sessionID: sessionID, role: role, text: text) else { return }
             if role == "user" { model.appendUser(text) }
             else if role == "assistant" { let requestID = UUID().uuidString; model.beginAssistant(requestID: requestID); model.appendAssistant(text, requestID: requestID); model.completeAssistant(requestID: requestID) }
         case .newSession, .loadSession, .listSessions, .sessionList, .cancel, .hello, .clientHello, .helloAck, .petClicked, .conversationRename, .conversationDelete, .userMessage, .observation, .shutdown, .shutdownAck,
@@ -2300,6 +2393,14 @@ final class PetWindowController: NSObject, NSWindowDelegate {
         return activeSessionID == sessionID && record.hermesSessionID == sessionID
     }
 
+    private func acceptsLiveRequest(_ requestID: String) -> Bool {
+        FatCatLiveRequestPolicy.accepts(
+            activeRequestID: model.currentRequestID,
+            incomingRequestID: requestID,
+            ignoredRequestIDs: ignoredRequestIDs.union(finishedRequestIDs)
+        )
+    }
+
     private func handleAgentState(_ state: FatCatAgentState, requestID: String? = nil) {
         switch state {
         case .connecting: model.agentStatus = "Connecting…"
@@ -2310,7 +2411,10 @@ final class PetWindowController: NSObject, NSWindowDelegate {
             model.handleLife(.hermes(.turnFailed))
         case .completed:
             let completedRequestID = requestID ?? model.currentRequestID
-            if let completedRequestID { model.completeAssistant(requestID: completedRequestID) }
+            if let completedRequestID {
+                finishedRequestIDs.insert(completedRequestID)
+                model.completeAssistant(requestID: completedRequestID)
+            }
             model.handleLife(.hermes(.turnCompleted))
             if model.speakReplies,
                let completedRequestID,
@@ -2323,7 +2427,10 @@ final class PetWindowController: NSObject, NSWindowDelegate {
                 startNextPendingPrompt(for: conversationID, sessionID: sessionID)
             }
         case .failed:
-            if let requestID = requestID ?? model.currentRequestID { model.failAssistant(requestID: requestID, message: "FatCat Agent stopped before completing the response.") }
+            if let requestID = requestID ?? model.currentRequestID {
+                finishedRequestIDs.insert(requestID)
+                model.failAssistant(requestID: requestID, message: "FatCat Agent stopped before completing the response.")
+            }
             model.handleLife(.hermes(.turnFailed))
             if let conversationID = model.selectedConversationID, let sessionID = activeSessionID {
                 startNextPendingPrompt(for: conversationID, sessionID: sessionID)
@@ -2351,6 +2458,7 @@ final class PetWindowController: NSObject, NSWindowDelegate {
         menu.addItem(NSMenuItem(title: "Focus Composer", action: #selector(focusComposerFromMenu), keyEquivalent: "l"))
         menu.addItem(NSMenuItem(title: "Copy Last Response", action: #selector(copyLastResponseFromMenu), keyEquivalent: "c"))
         menu.items[3].keyEquivalentModifierMask = [.command, .shift]
+        menu.addItem(NSMenuItem(title: "Open Electron Workspace", action: #selector(openElectronWorkspaceFromMenu), keyEquivalent: ""))
         menu.addItem(.separator())
         menu.addItem(NSMenuItem(title: perception.isPaused ? "Resume Observation" : "Pause Observation", action: #selector(toggleObservation), keyEquivalent: ""))
         let lockItem = NSMenuItem(title: "Lock Position", action: #selector(togglePositionLock), keyEquivalent: "")
@@ -2374,6 +2482,8 @@ final class PetWindowController: NSObject, NSWindowDelegate {
     @objc private func searchConversationsFromMenu() { openChat(); model.isShowingHistory = true }
 
     @objc private func focusComposerFromMenu() { openChat(); model.focusComposerToken += 1 }
+
+    @objc private func openElectronWorkspaceFromMenu() { openOrFocusElectron() }
 
     @objc private func copyLastResponseFromMenu() {
         guard let text = model.messages.last(where: { $0.role == .assistant })?.text else { return }

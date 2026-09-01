@@ -107,6 +107,20 @@ struct FatCatAvatarContractTests {
         #expect(!appMain.contains("launchTask?.cancel()"))
     }
 
+    @Test func electronWorkspaceUsesOneLauncherForAvatarAndMenu() throws {
+        let appMain = try loadText("macos/FatCat/Sources/FatCat/AppMain.swift")
+        let launcher = try loadText("macos/FatCat/Sources/FatCatCore/FatCatElectronLauncher.swift")
+
+        #expect(appMain.contains("FATCAT_ELECTRON_APP_PATH"))
+        #expect(launcher.contains("FatCat Electron.app"))
+        #expect(appMain.contains("runningApplications"))
+        #expect(appMain.contains("onDoubleClick: { [weak self] in self?.openOrFocusElectron() }"))
+        #expect(appMain.contains("openElectronWorkspaceFromMenu"))
+        #expect(appMain.contains("private let electronLauncher = FatCatElectronWorkspaceLauncher()"))
+        #expect(!appMain.contains("/Users/"))
+        #expect(!appMain.contains("pkill"))
+    }
+
     private func loadJSON(_ relativePath: String) throws -> [String: Any] {
         let data = try Data(contentsOf: repositoryRoot.appendingPathComponent(relativePath))
         return try #require(JSONSerialization.jsonObject(with: data) as? [String: Any])

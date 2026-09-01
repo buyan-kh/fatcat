@@ -79,6 +79,37 @@ public struct FatCatTranscriptState: Equatable, Sendable {
     }
 }
 
+public enum FatCatLiveRequestPolicy {
+    public static func accepts(activeRequestID: String?, incomingRequestID: String, ignoredRequestIDs: Set<String> = []) -> Bool {
+        guard !incomingRequestID.isEmpty, !ignoredRequestIDs.contains(incomingRequestID) else { return false }
+        return activeRequestID == nil || activeRequestID == incomingRequestID
+    }
+}
+
+public struct FatCatSessionHistoryGate: Equatable, Sendable {
+    private var restoringSessionID: String?
+    private var seenRecords = Set<String>()
+
+    public init() {}
+
+    public mutating func begin(sessionID: String) {
+        restoringSessionID = sessionID
+        seenRecords.removeAll()
+    }
+
+    public mutating func finish(sessionID: String) {
+        guard restoringSessionID == sessionID else { return }
+        restoringSessionID = nil
+        seenRecords.removeAll()
+    }
+
+    public mutating func accepts(sessionID: String, role: String, text: String) -> Bool {
+        guard restoringSessionID == sessionID else { return false }
+        let key = "\(role)\u{1f}\(text)"
+        return seenRecords.insert(key).inserted
+    }
+}
+
 public struct ChatScrollState: Equatable, Sendable {
     public private(set) var isNearBottom = true
     public private(set) var shouldAutoScroll = true

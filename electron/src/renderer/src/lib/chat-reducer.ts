@@ -23,6 +23,7 @@ export const initialRendererState: RendererState = {
 export function chatReducer(state: RendererState, action: RendererAction): RendererState {
   switch (action.type) {
     case 'loaded':
+      if (state.snapshot) return { ...state, phase: 'ready' }
       return { phase: 'ready', snapshot: action.snapshot, notice: null }
     case 'bridge':
       if (action.event.type === 'snapshot') return { ...state, phase: 'ready', snapshot: action.event.snapshot }

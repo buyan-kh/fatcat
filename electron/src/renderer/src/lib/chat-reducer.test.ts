@@ -33,6 +33,19 @@ describe('chatReducer', () => {
     expect(state.snapshot?.messages[0]?.text).toBe('Hello')
   })
 
+  it('does not let a delayed initial load overwrite a live bridge snapshot', () => {
+    const live: AppSnapshot = {
+      ...snapshot,
+      activeRequestId: 'r1',
+      isGenerating: true,
+      messages: [{ id: 'm1', role: 'assistant', text: 'partial', requestId: 'r1', isStreaming: true, activities: [] }],
+    }
+    const afterBridge = chatReducer(initialRendererState, { type: 'bridge', event: { type: 'snapshot', snapshot: live } })
+    const afterDelayedLoad = chatReducer(afterBridge, { type: 'loaded', snapshot })
+    expect(afterDelayedLoad.snapshot).toBe(live)
+    expect(afterDelayedLoad.snapshot?.messages[0]?.text).toBe('partial')
+  })
+
   it('keeps transient notices separate from chat data', () => {
     const loaded = chatReducer(initialRendererState, { type: 'loaded', snapshot })
     const state = chatReducer(loaded, { type: 'bridge', event: { type: 'notice', level: 'error', message: 'Disconnected' } })

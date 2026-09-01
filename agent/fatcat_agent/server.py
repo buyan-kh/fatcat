@@ -87,6 +87,7 @@ class FatCatAgentSession:
         # race when the composer submits another prompt quickly.
         async with self.prompt_lock:
             await self.emit(self._state_event("sending", request_id))
+            await self.emit(_hermes_event("message.started", self.session_id, request_id, "Assistant response started"))
             try:
                 if self.agent is None:
                     self.agent = self._make_agent()
@@ -113,12 +114,16 @@ class FatCatAgentSession:
                     succeeded = getattr(response, "stop_reason", None) == "end_turn" and not cancelled
                 else:
                     succeeded = await asyncio.to_thread(self._run, request_id, text)
+                if succeeded:
+                    await self.emit(_hermes_event("message.completed", self.session_id, request_id, "Assistant response completed"))
                 await self.emit(self._state_event("completed" if succeeded else "failed", request_id))
             except Exception as error:  # surface initialization failures as protocol events
                 LOG.exception("Hermes could not start a turn")
                 await self.emit(_event("error", request_id=request_id, message=str(error)))
                 await self.emit(self._state_event("failed", request_id))
             finally:
+                if self.agent is not None and hasattr(self.agent, "stream_delta_callback"):
+                    self.agent.stream_delta_callback = None
                 self.current_request_id = None
 
     def _make_agent(self):
@@ -194,8 +199,10 @@ execute OS mutations directly or bypass that handshake.
             return False
 
     def emit_sync(self, event: dict[str, Any]) -> None:
-        # The callback is marshalled back to the event loop by the connection.
-        self.loop.call_soon_threadsafe(asyncio.create_task, self.emit(event))
+        # The callback runs in Hermes' worker thread. Wait for the loop write so
+        # a later terminal event cannot overtake an earlier text delta.
+        future = asyncio.run_coroutine_threadsafe(self.emit(event), self.loop)
+        future.result()
 
 
 class _FatCatACPBridge:

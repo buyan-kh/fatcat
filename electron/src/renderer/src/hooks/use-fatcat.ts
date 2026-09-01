@@ -12,11 +12,15 @@ export function useFatCat() {
       return
     }
     let active = true
+    let bridgeEventReceived = false
     const unsubscribe = api.subscribe((event) => {
-      if (active) dispatch({ type: 'bridge', event })
+      if (active) {
+        bridgeEventReceived = true
+        dispatch({ type: 'bridge', event })
+      }
     })
     void api.snapshot()
-      .then((snapshot) => { if (active) dispatch({ type: 'loaded', snapshot }) })
+      .then((snapshot) => { if (active && !bridgeEventReceived) dispatch({ type: 'loaded', snapshot }) })
       .catch((error) => { if (active) dispatch({ type: 'failed', message: errorMessage(error) }) })
     return () => {
       active = false

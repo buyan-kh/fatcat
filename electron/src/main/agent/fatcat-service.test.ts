@@ -183,6 +183,45 @@ describe('FatCatService', () => {
     })
   })
 
+  it('renders v2 chunks incrementally and rejects stale or duplicate events', async () => {
+    const record = await service.createConversation('/tmp/project')
+    const creation = transport.commands.at(-1)!
+    transport.event({ version: 1, type: 'session_ready', request_id: requestId(creation), conversation_id: record.id, session_id: 's1' })
+    await vi.waitFor(async () => expect((await service.snapshot()).conversations[0]?.hermesSessionId).toBe('s1'))
+    await service.sendMessage('Stream this')
+    const request = requestId(transport.commands.at(-1)!)
+
+    transport.event({ version: 2, event_id: 'start-1', kind: 'message.started', session_id: 's1', request_id: request, summary: 'Started', details: {} })
+    transport.event({ version: 2, event_id: 'delta-1', kind: 'message.delta', session_id: 's1', request_id: request, summary: 'First', details: { text: 'First' } })
+    await vi.waitFor(async () => expect((await service.snapshot()).messages.at(-1)).toMatchObject({ role: 'assistant', text: 'First', isStreaming: true }))
+
+    transport.event({ version: 2, event_id: 'stale-1', kind: 'message.delta', session_id: 's1', request_id: 'stale-request', summary: 'Stale', details: { text: ' stale' } })
+    transport.event({ version: 2, event_id: 'delta-1', kind: 'message.delta', session_id: 's1', request_id: request, summary: 'Duplicate', details: { text: 'First' } })
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect((await service.snapshot()).messages.filter((message) => message.role === 'assistant')).toHaveLength(1)
+    expect((await service.snapshot()).messages.at(-1)?.text).toBe('First')
+
+    transport.event({ version: 2, event_id: 'delta-2', kind: 'message.delta', session_id: 's1', request_id: request, summary: 'Second', details: { text: ' second' } })
+    transport.event({ version: 2, event_id: 'complete-1', kind: 'message.completed', session_id: 's1', request_id: request, summary: 'Done', details: {} })
+    await vi.waitFor(async () => expect((await service.snapshot()).messages.at(-1)).toMatchObject({ text: 'First second', isStreaming: false }))
+    expect((await service.snapshot()).isGenerating).toBe(false)
+  })
+
+  it('keeps partial v2 output when the request fails', async () => {
+    const record = await service.createConversation('/tmp/project')
+    const creation = transport.commands.at(-1)!
+    transport.event({ version: 1, type: 'session_ready', request_id: requestId(creation), conversation_id: record.id, session_id: 's1' })
+    await vi.waitFor(async () => expect((await service.snapshot()).conversations[0]?.hermesSessionId).toBe('s1'))
+    await service.sendMessage('Fail after output')
+    const request = requestId(transport.commands.at(-1)!)
+
+    transport.event({ version: 2, event_id: 'start-fail', kind: 'message.started', session_id: 's1', request_id: request, summary: 'Started', details: {} })
+    transport.event({ version: 2, event_id: 'delta-fail', kind: 'message.delta', session_id: 's1', request_id: request, summary: 'Partial', details: { text: 'Partial' } })
+    transport.event({ version: 1, type: 'error', request_id: request, message: 'Provider disconnected' })
+
+    await vi.waitFor(async () => expect((await service.snapshot()).messages.at(-1)).toMatchObject({ text: 'Partial', isStreaming: false, errorMessage: 'Provider disconnected' }))
+  })
+
   it('renders legacy approvals and verification with collision-proof activity IDs', async () => {
     const record = await service.createConversation('/tmp/project')
     const creation = transport.commands.at(-1)!
