@@ -5,6 +5,7 @@ import remarkGfm from 'remark-gfm'
 import type { ChatMessage } from '@shared/chat'
 import { Button } from '@renderer/components/ui/button'
 import { TurnActivity } from './turn-activity'
+import { StreamingText } from './streaming-text'
 
 type MessageRowProps = {
   message: ChatMessage
@@ -26,7 +27,9 @@ export function MessageRow({ message, onCopy, onRetry }: MessageRowProps) {
           <div className="rounded-[10px] rounded-br-[4px] border-[0.5px] border-border/70 bg-muted/80 px-3.5 py-2.5 text-sm leading-6">{message.text}</div>
         ) : (
           <div className="fatcat-markdown text-[13px] leading-6">
-            {message.text ? (
+            {message.text ? shouldAnimatePlainText(message.text) && message.isStreaming ? (
+              <StreamingText text={message.text} isStreaming />
+            ) : (
               <ReactMarkdown
                 remarkPlugins={[remarkGfm]}
                 components={{
@@ -36,7 +39,6 @@ export function MessageRow({ message, onCopy, onRetry }: MessageRowProps) {
                 }}
               >{message.text}</ReactMarkdown>
             ) : <span className="text-muted-foreground">Thinking…</span>}
-            {message.isStreaming && <span className="ml-1 inline-block h-4 w-0.5 animate-pulse bg-foreground/60 align-middle" aria-label="Streaming" />}
           </div>
         )}
         {message.errorMessage && (
@@ -52,4 +54,8 @@ export function MessageRow({ message, onCopy, onRetry }: MessageRowProps) {
       </div>
     </article>
   )
+}
+
+function shouldAnimatePlainText(text: string): boolean {
+  return !/[`*_#[\]()>~-]/.test(text)
 }

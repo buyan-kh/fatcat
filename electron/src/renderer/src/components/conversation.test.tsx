@@ -42,6 +42,13 @@ describe('conversation experience', () => {
     expect(screen.getByRole('button', { name: /read_file/ })).toBeInTheDocument()
   })
 
+  it('resolves plain streaming text word by word and shows a live cursor', () => {
+    render(<MessageRow message={{ ...assistant, text: 'Hello from FatCat', isStreaming: true, activities: [] }} onCopy={vi.fn()} onRetry={vi.fn()} />)
+    expect(screen.getByLabelText('Streaming response')).toBeInTheDocument()
+    expect(screen.getAllByTestId('streaming-token')).toHaveLength(3)
+    expect(screen.getByLabelText('Streaming response').querySelector('.streaming-cursor')).toBeInTheDocument()
+  })
+
   it('sends with Return, preserves Shift-Return, and switches to Stop while generating', async () => {
     const user = userEvent.setup()
     const onSend = vi.fn()
