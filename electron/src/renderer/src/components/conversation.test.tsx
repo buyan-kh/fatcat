@@ -34,6 +34,7 @@ describe('conversation experience', () => {
     await user.click(screen.getByRole('button', { name: /read_file/ }))
     expect(screen.getByText('README.md', { selector: 'code' })).toBeInTheDocument()
     expect(screen.getByText('Read complete.')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Copy message' }).parentElement).toHaveClass('opacity-100')
   })
 
   it('shows a live thinking label and expands active traces automatically', () => {

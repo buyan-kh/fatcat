@@ -39,6 +39,7 @@ export function MessageRow({ message, onCopy, onRetry }: MessageRowProps) {
                 }}
               >{message.text}</ReactMarkdown>
             ) : <span className="text-muted-foreground">Thinking…</span>}
+            {message.isStreaming && !shouldAnimatePlainText(message.text) && <span className="streaming-cursor ml-1" aria-label="Streaming" />}
           </div>
         )}
         {message.errorMessage && (
@@ -47,7 +48,7 @@ export function MessageRow({ message, onCopy, onRetry }: MessageRowProps) {
             <Button variant="ghost" size="xs" onClick={onRetry}>Retry</Button>
           </div>
         )}
-        <div className={`mt-1 flex h-7 items-center gap-1 opacity-0 transition-opacity group-hover/message:opacity-100 focus-within:opacity-100 ${user ? 'justify-end' : ''}`}>
+        <div className={`mt-1 flex h-7 items-center gap-1 transition-opacity duration-400 ${message.isStreaming ? 'pointer-events-none opacity-0' : 'opacity-100'} ${user ? 'justify-end' : ''}`}>
           <Button variant="ghost" size="icon-xs" aria-label="Copy message" onClick={() => onCopy(message.text)}><Copy /></Button>
           {!user && <Button variant="ghost" size="icon-xs" aria-label="Retry response" onClick={onRetry}><ArrowClockwise /></Button>}
         </div>

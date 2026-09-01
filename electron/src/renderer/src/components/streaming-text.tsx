@@ -9,7 +9,7 @@ type StreamingTextProps = {
 export function StreamingText({ text, isStreaming }: StreamingTextProps) {
   const tokens = useMemo(() => text.match(/\S+\s*/g) ?? [], [text])
   return (
-    <span aria-label={isStreaming ? 'Streaming response' : undefined}>
+    <span aria-label={isStreaming ? 'Streaming response' : undefined} className="whitespace-pre-wrap">
       {tokens.map((token, index) => (
         <Fragment key={`${index}-${token}`}>
           <span data-testid="streaming-token" data-streaming-token={isStreaming ? '' : undefined} className={isStreaming ? 'streaming-token' : undefined}>{token}</span>
