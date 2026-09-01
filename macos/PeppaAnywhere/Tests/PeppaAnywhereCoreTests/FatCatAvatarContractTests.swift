@@ -90,10 +90,17 @@ struct FatCatAvatarContractTests {
         #expect(!appMain.contains("reason = .idleReposition"))
     }
 
-    @Test func nativeWindowConnectsHermesWhenItIsShown() throws {
+    @Test func nativeWindowConnectsWithoutOwningAgentOrResizingPet() throws {
         let appMain = try loadText("macos/PeppaAnywhere/Sources/PeppaAnywhere/AppMain.swift")
 
         #expect(appMain.contains("panel.orderFrontRegardless()\n        agent.requestProviderInventory()\n        flightController.start(panel: panel)"))
+        #expect(appMain.contains("runtime/fatcat-agent.sock"))
+        #expect(!appMain.contains("private var process: Process?"))
+        #expect(!appMain.contains("let process = Process()"))
+        #expect(!appMain.contains("process?.terminate()"))
+        #expect(!appMain.contains("try? write(.shutdown)"))
+        #expect(!appMain.contains("removeItem(at: socketPath)"))
+        #expect(!appMain.contains("panel.setContentSize"))
     }
 
     private func loadJSON(_ relativePath: String) throws -> [String: Any] {

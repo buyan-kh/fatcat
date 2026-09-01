@@ -287,18 +287,15 @@ final class PeppaAgentClient: ObservableObject {
     @Published private(set) var status = "FatCat Agent is not connected."
     var onMessage: ((PeppaIPCMessage) -> Void)?
 
-    private var process: Process?
     private var socketHandle: FileHandle?
     private var buffer = Data()
     private let socketPath: URL
-    private let hermesHome: URL
     private var launchTask: Task<Void, Never>?
 
     init() {
         let baseSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
         let support = baseSupport.appendingPathComponent("FatCat", isDirectory: true)
-        socketPath = support.appendingPathComponent("peppa-agent.sock")
-        hermesHome = URL(fileURLWithPath: ProcessInfo.processInfo.environment["FATCAT_HERMES_PATH"] ?? support.appendingPathComponent("Hermes", isDirectory: true).path, isDirectory: true)
+        socketPath = URL(fileURLWithPath: ProcessInfo.processInfo.environment["FATCAT_AGENT_SOCKET"] ?? support.appendingPathComponent("runtime/fatcat-agent.sock").path)
     }
 
     func newSession(conversationID: String, cwd: String) {
@@ -330,18 +327,8 @@ final class PeppaAgentClient: ObservableObject {
     }
 
     func configureProviderCredential(providerID: String, credentialRef: String, baseURL: String?) {
-        launchTask?.cancel()
-        launchTask = Task { [weak self] in
-            guard let self else { return }
-            await ensureConnected()
-            try? write(.providerSetCredentialRef(requestID: UUID().uuidString, providerID: providerID, credentialRef: credentialRef))
-            if let baseURL {
-                try? write(.providerSetBaseURL(requestID: UUID().uuidString, providerID: providerID, baseURL: baseURL))
-            }
-            try? await Task.sleep(for: .milliseconds(150))
-            closeRuntime()
-            await ensureConnected()
-        }
+        request(.providerSetCredentialRef(requestID: UUID().uuidString, providerID: providerID, credentialRef: credentialRef))
+        if let baseURL { request(.providerSetBaseURL(requestID: UUID().uuidString, providerID: providerID, baseURL: baseURL)) }
     }
 
     func send(text: String, sessionID: String, observation: ObservationPayload?, requestID: String = UUID().uuidString) {
@@ -362,8 +349,13 @@ final class PeppaAgentClient: ObservableObject {
         request(.cancel(requestID: UUID().uuidString, sessionID: sessionID))
     }
 
+    func petClicked(conversationID: String?) {
+        request(.petClicked(eventID: UUID().uuidString, petID: "primary", conversationID: conversationID))
+    }
+
     func reconnect() {
-        stop()
+        launchTask?.cancel()
+        closeConnection()
         launchTask = Task { [weak self] in
             await self?.ensureConnected()
         }
@@ -371,61 +363,30 @@ final class PeppaAgentClient: ObservableObject {
 
     func stop() {
         launchTask?.cancel()
-        if socketHandle != nil { try? write(.shutdown) }
-        closeRuntime()
-        status = "FatCat Agent stopped."
+        closeConnection()
+        status = "FatCat Agent disconnected."
     }
 
-    private func closeRuntime() {
+    private func closeConnection() {
         socketHandle?.readabilityHandler = nil
         try? socketHandle?.close()
         socketHandle = nil
-        process?.terminate()
-        process = nil
-        try? FileManager.default.removeItem(at: socketPath)
     }
 
     private func ensureConnected() async {
         if socketHandle != nil { return }
-        guard let agent = agentExecutable() else {
-            status = "FatCat Agent is not bundled. Run the packaging script before launching."
-            return
-        }
-        do {
-            try FileManager.default.createDirectory(at: hermesHome, withIntermediateDirectories: true)
-            let process = Process()
-            process.executableURL = agent
-            process.arguments = ["--socket", socketPath.path, "--hermes-home", hermesHome.path]
-            var environment = ProcessInfo.processInfo.environment
-            let credentials = FatCatCredentials()
-            for (providerID, variable) in [
-                ("openai-api", "OPENAI_API_KEY"),
-                ("anthropic", "ANTHROPIC_API_KEY")
-            ] {
-                if let secret = try? credentials.read(providerID: providerID),
-                   !secret.isEmpty {
-                    environment[variable] = secret
-                }
+        status = "Connecting to shared FatCat Agent…"
+        for attempt in 0..<50 {
+            if Task.isCancelled { return }
+            if connectSocket() {
+                try? write(.clientHello(client: "native_pet"))
+                status = "Connected"
+                return
             }
-            process.environment = environment
-            process.standardOutput = FileHandle.nullDevice
-            process.standardError = FileHandle.nullDevice
-            try process.run()
-            self.process = process
-            status = "Connecting…"
-            for _ in 0..<50 {
-                if Task.isCancelled { return }
-                if connectSocket() {
-                    try? write(.clientHello(client: "native_pet"))
-                    status = "Connected"
-                    return
-                }
-                try? await Task.sleep(for: .milliseconds(100))
-            }
-            status = "FatCat Agent did not become ready."
-        } catch {
-            status = "FatCat Agent could not start: \(error.localizedDescription)"
+            let delay = min(1000, 100 + attempt * 40)
+            try? await Task.sleep(for: .milliseconds(delay))
         }
+        status = "Shared FatCat Agent is unavailable. Reconnect or install the LaunchAgent."
     }
 
     private func connectSocket() -> Bool {
@@ -479,22 +440,7 @@ final class PeppaAgentClient: ObservableObject {
         socketHandle?.readabilityHandler = nil
         try? socketHandle?.close()
         socketHandle = nil
-        process?.terminate()
-        process = nil
         status = "Disconnected — reconnect to continue."
-    }
-
-    private func agentExecutable() -> URL? {
-        if let override = ProcessInfo.processInfo.environment["FATCAT_AGENT_PATH"], !override.isEmpty { return URL(fileURLWithPath: override) }
-        let candidates = [
-            Bundle.main.url(forResource: "PeppaAgent/PeppaAgent", withExtension: nil),
-            Bundle.module.url(forResource: "PeppaAgent/PeppaAgent", withExtension: nil)
-        ]
-        return candidates.compactMap { $0 }.first(where: { url in
-            var isDirectory = ObjCBool(false)
-            guard FileManager.default.fileExists(atPath: url.path, isDirectory: &isDirectory), !isDirectory.boolValue else { return false }
-            return FileManager.default.isExecutableFile(atPath: url.path)
-        })
     }
 
     private static func prompt(_ text: String, observation: ObservationPayload?) -> String {
@@ -1506,6 +1452,7 @@ final class PetWindowController: NSObject, NSWindowDelegate {
             panel.setFrameOrigin(NSPoint(x: screen.midX - 110, y: screen.minY + 80))
         }
         panel.orderFrontRegardless()
+        agent.requestProviderInventory()
         flightController.start(panel: panel)
     }
 
@@ -1540,7 +1487,6 @@ final class PetWindowController: NSObject, NSWindowDelegate {
         model.handleLife(.userClickedAvatar)
         model.isChatOpen = true
         model.handleLife(.userOpenedChat)
-        panel.setContentSize(NSSize(width: 660, height: 555))
         panel.makeKeyAndOrderFront(nil)
         resumeSelectedConversation()
     }
@@ -1549,13 +1495,11 @@ final class PetWindowController: NSObject, NSWindowDelegate {
         model.isChatOpen = false
         model.isExpanded = false
         model.handleLife(.userClosedChat)
-        panel.setContentSize(NSSize(width: 220, height: 220))
         panel.orderFrontRegardless()
     }
 
     private func toggleExpanded() {
         model.isExpanded.toggle()
-        panel.setContentSize(model.isExpanded ? NSSize(width: 1020, height: 735) : NSSize(width: 660, height: 555))
     }
 
     private func sendChat(promptOverride: String? = nil) {
@@ -1718,6 +1662,47 @@ final class PetWindowController: NSObject, NSWindowDelegate {
 
     private func handleAgentMessage(_ message: PeppaIPCMessage) {
         switch message {
+        case let .conversationSnapshot(selectedID, records):
+            let now = Date()
+            let mapped = records.map { record in
+                FatCatConversationRecord(
+                    id: record.id,
+                    hermesSessionID: record.sessionID,
+                    title: record.title,
+                    createdAt: now,
+                    updatedAt: now,
+                    lastPreview: record.messages.last?.text ?? "",
+                    workspacePath: record.workspacePath
+                )
+            }
+            try? conversationStore.replace(records: mapped, selectedID: selectedID)
+            model.conversations = mapped
+            model.selectedConversationID = selectedID
+            guard let selected = records.first(where: { $0.id == selectedID }) else {
+                activeSessionID = nil
+                model.replaceMessages([])
+                return
+            }
+            model.replaceMessages(selected.messages.map { message in
+                ChatMessage(
+                    id: UUID(uuidString: message.id) ?? UUID(),
+                    role: message.role == "user" ? .user : (message.role == "assistant" ? .assistant : .system),
+                    text: message.text
+                )
+            })
+            if let sessionID = selected.sessionID, activeSessionID != sessionID {
+                activeSessionID = sessionID
+                agent.loadSession(conversationID: selected.id, sessionID: sessionID, cwd: selected.workspacePath)
+            }
+        case let .messageAdded(conversationID, sessionID, message):
+            guard conversationID == model.selectedConversationID, sessionID == activeSessionID else { return }
+            if message.role == "user" {
+                if model.messages.last(where: { $0.role == .user })?.text != message.text { model.appendUser(message.text) }
+                model.currentRequestID = message.id
+                model.isGenerating = true
+            } else if message.role == "system" {
+                model.appendSystem(message.text)
+            }
         case let .assistantDelta(requestID, sessionID, text):
             guard isActiveSession(sessionID), !ignoredRequestIDs.contains(requestID) else { return }
             model.handleLife(.hermes(.streamDelta))
@@ -1805,7 +1790,7 @@ final class PetWindowController: NSObject, NSWindowDelegate {
             guard conversationID == model.selectedConversationID else { return }
             if role == "user" { model.appendUser(text) }
             else if role == "assistant" { let requestID = UUID().uuidString; model.beginAssistant(requestID: requestID); model.appendAssistant(text, requestID: requestID); model.completeAssistant(requestID: requestID) }
-        case .newSession, .loadSession, .listSessions, .sessionList, .cancel, .hello, .clientHello, .helloAck, .petClicked, .conversationSnapshot, .messageAdded, .userMessage, .observation, .shutdown, .shutdownAck,
+        case .newSession, .loadSession, .listSessions, .sessionList, .cancel, .hello, .clientHello, .helloAck, .petClicked, .userMessage, .observation, .shutdown, .shutdownAck,
              .providerInventory, .providerModels, .providerSetDefault, .providerSetCredentialRef, .providerSetBaseURL, .providerValidate:
             break
         }
@@ -2083,7 +2068,7 @@ struct SettingsView: View {
                     let endpoint = selectedProviderID == "openai-api" ? baseURL.trimmingCharacters(in: .whitespacesAndNewlines) : ""
                     if saveCredential(selectedProviderID, secret, endpoint.isEmpty ? nil : endpoint) {
                         apiKey = ""
-                        setupMessage = "Saved to the macOS Keychain. Hermes will restart with the new provider settings."
+                        setupMessage = "Saved to the macOS Keychain and sent to the shared FatCat Agent."
                     } else {
                         setupMessage = "FatCat could not save that API key to the macOS Keychain."
                     }

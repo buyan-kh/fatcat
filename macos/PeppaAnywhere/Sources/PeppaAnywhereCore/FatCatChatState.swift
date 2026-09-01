@@ -268,6 +268,17 @@ public final class FatCatConversationStore: @unchecked Sendable {
         try persistLocked()
     }
 
+    public func replace(records: [FatCatConversationRecord], selectedID: String?) throws {
+        lock.lock()
+        defer { lock.unlock() }
+        if let selectedID, !records.contains(where: { $0.id == selectedID }) {
+            throw FatCatConversationStoreError.conversationNotFound
+        }
+        self.records = records
+        self.selectedID = selectedID
+        try persistLocked()
+    }
+
     public func attachHermesSession(_ sessionID: String, to recordID: String) throws {
         try mutate(recordID: recordID) { record in record.hermesSessionID = sessionID }
     }
