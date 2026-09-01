@@ -12,6 +12,7 @@ type TraceRow = {
   id: string
   primary: string
   secondary?: string
+  arguments?: Record<string, string>
   detail?: string
   status: TurnState
   kind: TurnActivityModel['kind']
@@ -31,7 +32,7 @@ export function TurnActivity({ activities }: { activities: TurnActivityModel[] }
   const toolCount = activities.filter((activity) => activity.kind === 'tool').length
   const summary = working
     ? toolCount > 0 ? 'Running tools' : 'Thinking'
-    : toolCount > 0 ? `Ran ${toolCount} ${toolCount === 1 ? 'tool' : 'tools'}` : 'Thought for a moment'
+    : toolCount > 0 ? `${toolCount} tool call${toolCount === 1 ? '' : 's'}` : 'Thought for a moment'
   const expanded = manualExpanded ?? working
 
   const toggleActivity = (id: string) => setOpen((current) => {
@@ -67,7 +68,7 @@ export function TurnActivity({ activities }: { activities: TurnActivityModel[] }
                       {row.kind === 'tool' ? <Code className="size-3.5 text-muted-foreground" /> : row.status === 'failed' ? <X className="size-3.5 text-destructive" /> : row.status === 'completed' ? <Check className="size-3.5 text-emerald-500" /> : <SpinnerGap className="size-3.5 animate-spin text-muted-foreground" />}
                     </span>
                     <span className="min-w-0 truncate text-[12.5px] font-medium text-foreground/85">{row.primary}</span>
-                    {row.secondary && (row.kind === 'tool' ? <code className="min-w-0 truncate font-mono text-[11px] text-muted-foreground">{row.secondary}</code> : <span className="min-w-0 truncate text-[11px] text-muted-foreground">{row.secondary}</span>)}
+                    {row.secondary && (row.kind === 'tool' ? <code className="min-w-0 truncate rounded-[6px] bg-muted/65 px-1.5 py-0.5 font-mono text-[11px] text-muted-foreground">{row.secondary}</code> : <span className="min-w-0 truncate text-[11px] text-muted-foreground">{row.secondary}</span>)}
                   </>
                 )
                 const rowClass = 'flex min-h-7 w-full min-w-0 items-center gap-2 rounded-[6px] px-1.5 py-0.5 text-left transition-colors hover:bg-muted/60'
@@ -77,9 +78,9 @@ export function TurnActivity({ activities }: { activities: TurnActivityModel[] }
                   <div key={`${row.id}-${index}`}>
                     <button type="button" aria-expanded={rowExpanded} aria-label={`${row.primary}, ${row.status}`} onClick={() => toggleActivity(row.id)} className={rowClass}>
                       {content}
-                      <CaretDown className={cn('ml-auto size-3 shrink-0 text-muted-foreground/70 transition-transform', rowExpanded && 'rotate-180')} />
+                      <CaretDown className={cn('ml-auto size-3 shrink-0 text-muted-foreground/70 opacity-0 transition-[opacity,transform]', rowExpanded && 'rotate-180 opacity-100', 'group-hover:opacity-100')} />
                     </button>
-                    {rowExpanded && row.detail && <p className="ml-6 mt-0.5 border-l border-border/70 pl-3 text-[11px] leading-5 text-muted-foreground">{row.detail}</p>}
+                    {rowExpanded && (row.detail || row.arguments) && <div className="ml-6 mt-0.5 space-y-0.5 border-l border-border/70 pl-3 text-[11px] leading-5 text-muted-foreground">{row.arguments && Object.entries(row.arguments).map(([key, value]) => <p key={key}><span className="font-medium text-foreground/70">{key}</span> <code>{value}</code></p>)}{row.detail && <p>{row.detail}</p>}</div>}
                   </div>
                 )
               })}
@@ -100,7 +101,7 @@ function toRows(activities: TurnActivityModel[]): TraceRow[] {
       continue
     }
     const secondary = activity.kind === 'tool' ? Object.values(activity.arguments ?? {})[0] : undefined
-    rows.push({ id: activity.id, primary: activity.label, secondary, detail: activity.detail, status: activity.status, kind: activity.kind, expandable: Boolean(activity.detail || Object.keys(activity.arguments ?? {}).length) })
+    rows.push({ id: activity.id, primary: activity.label, secondary, arguments: activity.arguments, detail: activity.detail, status: activity.status, kind: activity.kind, expandable: Boolean(activity.detail || Object.keys(activity.arguments ?? {}).length) })
   }
   return rows
 }
