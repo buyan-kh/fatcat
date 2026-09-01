@@ -125,6 +125,44 @@ describe('FatCatService', () => {
       expect(snapshot.isGenerating).toBe(false)
     })
   })
+
+  it('keeps Electron on its own selected conversation when native changes the shared selection', async () => {
+    transport.event({
+      version: 1,
+      type: 'conversation_snapshot',
+      selected_id: 'electron-chat',
+      records: [{ id: 'electron-chat', title: 'Electron chat', workspace_path: '/tmp', session_id: 'electron-session', messages: [{ id: 'e1', role: 'assistant', text: 'Electron history' }] }],
+    })
+    await vi.waitFor(async () => expect((await service.snapshot()).selectedId).toBe('electron-chat'))
+
+    transport.event({
+      version: 1,
+      type: 'conversation_snapshot',
+      selected_id: 'native-chat',
+      records: [
+        { id: 'electron-chat', title: 'Electron chat', workspace_path: '/tmp', session_id: 'electron-session', messages: [{ id: 'e1', role: 'assistant', text: 'Electron history' }] },
+        { id: 'native-chat', title: 'Native chat', workspace_path: '/tmp', session_id: 'native-session', messages: [{ id: 'n1', role: 'assistant', text: 'Native history' }] },
+      ],
+    })
+
+    await vi.waitFor(async () => {
+      const snapshot = await service.snapshot()
+      expect(snapshot.selectedId).toBe('electron-chat')
+      expect(snapshot.messages.map((message) => message.text)).toEqual(['Electron history'])
+    })
+    await service.sendMessage('Reply in Electron chat')
+    expect(transport.commands.at(-1)).toMatchObject({ type: 'user_message', conversation_id: 'electron-chat', session_id: 'electron-session' })
+  })
+
+  it('accepts the new Electron session even after a native snapshot arrives', async () => {
+    const record = await service.createConversation('/tmp/project')
+    const creation = transport.commands.at(-1)!
+    transport.event({ version: 1, type: 'conversation_snapshot', selected_id: 'native-chat', records: [{ id: 'native-chat', title: 'Native chat', workspace_path: '/tmp', session_id: 'native-session', messages: [] }] })
+    transport.event({ version: 1, type: 'session_ready', request_id: requestId(creation), conversation_id: record.id, session_id: 'electron-session' })
+    await vi.waitFor(async () => expect((await service.snapshot()).conversations.find((item) => item.id === record.id)?.hermesSessionId).toBe('electron-session'))
+    await service.sendMessage('New chat reply')
+    expect(transport.commands.at(-1)).toMatchObject({ type: 'user_message', conversation_id: record.id, session_id: 'electron-session' })
+  })
 })
 
 function requestId(command: ClientCommand): string {

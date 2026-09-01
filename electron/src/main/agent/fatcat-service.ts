@@ -25,6 +25,10 @@ export class FatCatService extends EventEmitter {
   private transport: AgentTransport
   private messages: ChatMessage[] = []
   private connection: ConnectionStatus = { phase: 'connected', detail: 'Connected' }
+  // Native and Electron share Hermes, but each client owns its visible
+  // selection. A broadcast snapshot must not make Electron jump to the
+  // conversation the other surface currently has open.
+  private selectedConversationId: string | null = null
   private activeRequestId: string | null = null
   private ignoredRequestIds = new Set<string>()
   private retryPrompt: string | null = null
@@ -44,7 +48,7 @@ export class FatCatService extends EventEmitter {
     const document = await this.options.repository.snapshot()
     return {
       conversations: document.records,
-      selectedId: document.selectedId,
+      selectedId: this.selectedConversationId ?? document.selectedId,
       messages: structuredClone(this.messages),
       connection: { ...this.connection },
       activeRequestId: this.activeRequestId,
@@ -59,6 +63,7 @@ export class FatCatService extends EventEmitter {
     const existing = await this.options.repository.snapshot()
     const workspace = workspacePath?.trim() || existing.records[0]?.workspacePath || this.options.defaultWorkspace || homedir()
     const record = await this.options.repository.create('New chat', workspace)
+    this.selectedConversationId = record.id
     this.messages = []
     this.resumeError = null
     this.activeRequestId = null
@@ -72,6 +77,7 @@ export class FatCatService extends EventEmitter {
     const document = await this.options.repository.snapshot()
     const record = document.records.find((candidate) => candidate.id === id)
     if (!record) throw new Error(`Conversation not found: ${id}`)
+    this.selectedConversationId = id
     this.messages = []
     this.activeRequestId = null
     this.resumeError = null
@@ -91,14 +97,17 @@ export class FatCatService extends EventEmitter {
 
   async deleteConversation(id: string): Promise<void> {
     const before = await this.options.repository.snapshot()
-    const wasSelected = before.selectedId === id
+    const wasSelected = (this.selectedConversationId ?? before.selectedId) === id
     await this.options.repository.delete(id)
     this.transport.send({ version: 1, type: 'conversation_delete', request_id: randomUUID(), conversation_id: id })
     if (wasSelected) {
       this.messages = []
       this.activeRequestId = null
       const after = await this.options.repository.snapshot()
-      if (after.selectedId) await this.selectConversation(after.selectedId)
+      const nextId = after.records[0]?.id ?? null
+      this.selectedConversationId = nextId
+      if (nextId) await this.selectConversation(nextId)
+      else this.messages = []
     }
     await this.emitSnapshot()
   }
@@ -108,7 +117,8 @@ export class FatCatService extends EventEmitter {
     if (!normalized) throw new Error('Message is required')
     if (this.activeRequestId) throw new Error('A turn is already running')
     const document = await this.options.repository.snapshot()
-    const record = document.records.find((candidate) => candidate.id === document.selectedId)
+    const selectedId = this.selectedConversationId ?? document.selectedId
+    const record = document.records.find((candidate) => candidate.id === selectedId)
     if (!record?.hermesSessionId) throw new Error('Hermes session is not ready')
     const requestId = randomUUID()
     this.activeRequestId = requestId
@@ -122,7 +132,8 @@ export class FatCatService extends EventEmitter {
   async cancelTurn(): Promise<void> {
     if (!this.activeRequestId) return
     const document = await this.options.repository.snapshot()
-    const record = document.records.find((candidate) => candidate.id === document.selectedId)
+    const selectedId = this.selectedConversationId ?? document.selectedId
+    const record = document.records.find((candidate) => candidate.id === selectedId)
     if (!record?.hermesSessionId) return
     const cancelled = this.activeRequestId
     this.ignoredRequestIds.add(cancelled)
@@ -161,7 +172,8 @@ export class FatCatService extends EventEmitter {
     }
     this.connection = { phase: 'connected', detail: 'Connected' }
     const document = await this.options.repository.snapshot()
-    if (document.selectedId) await this.selectConversation(document.selectedId)
+    const selectedId = this.selectedConversationId ?? document.selectedId
+    if (selectedId) await this.selectConversation(selectedId)
     else await this.emitSnapshot()
   }
 
@@ -185,30 +197,44 @@ export class FatCatService extends EventEmitter {
     if ('request_id' in event && event.request_id && this.ignoredRequestIds.has(event.request_id)) return
     if (event.type === 'conversation_snapshot') {
       const now = new Date().toISOString()
+      const current = await this.options.repository.snapshot()
+      const incoming = event.records.map((record) => ({
+        id: record.id,
+        hermesSessionId: record.session_id ?? undefined,
+        title: record.title,
+        createdAt: now,
+        updatedAt: now,
+        lastPreview: record.messages.at(-1)?.text ?? '',
+        workspacePath: record.workspace_path,
+      }))
+      const localSelected = this.selectedConversationId
+      const localRecord = localSelected ? current.records.find((record) => record.id === localSelected) : undefined
+      // Keep a just-created local record through the broadcast window before
+      // the agent has persisted it. This is what makes a new chat replyable.
+      const keepPendingLocalRecord = localRecord && !localRecord.hermesSessionId && !incoming.some((record) => record.id === localRecord.id)
+      const records = keepPendingLocalRecord ? [...incoming, localRecord] : incoming
+      const selectedId = localSelected && records.some((record) => record.id === localSelected)
+        ? localSelected
+        : (current.selectedId && records.some((record) => record.id === current.selectedId) ? current.selectedId : event.selected_id)
+      this.selectedConversationId = selectedId
       await this.options.repository.replace({
-        selectedId: event.selected_id,
-        records: event.records.map((record) => ({
-          id: record.id,
-          hermesSessionId: record.session_id ?? undefined,
-          title: record.title,
-          createdAt: now,
-          updatedAt: now,
-          lastPreview: record.messages.at(-1)?.text ?? '',
-          workspacePath: record.workspace_path,
-        })),
+        selectedId,
+        records,
       })
-      const selected = event.records.find((record) => record.id === event.selected_id)
-      this.messages = (selected?.messages ?? []).map((item) => message(item.role, item.text, undefined, item.id))
-      this.activeRequestId = null
+      const selected = event.records.find((record) => record.id === selectedId)
+      if (!this.activeRequestId && selected) {
+        this.messages = selected.messages.map((item) => message(item.role, item.text, undefined, item.id))
+      }
       await this.emitSnapshot()
       return
     }
     const document = await this.options.repository.snapshot()
-    const selected = document.records.find((record) => record.id === document.selectedId)
+    const selectedId = this.selectedConversationId ?? document.selectedId
+    const selected = document.records.find((record) => record.id === selectedId)
 
     switch (event.type) {
       case 'message_added':
-        if (event.conversation_id !== document.selectedId || event.session_id !== selected?.hermesSessionId) return
+        if (event.conversation_id !== selectedId || event.session_id !== selected?.hermesSessionId) return
         if (!this.messages.some((item) => item.id === event.message.id)) {
           this.messages.push(message(event.message.role, event.message.text, undefined, event.message.id))
         }
@@ -218,25 +244,25 @@ export class FatCatService extends EventEmitter {
         }
         break
       case 'session_ready':
-        if (event.conversation_id !== document.selectedId) return
+        if (event.conversation_id !== selectedId) return
         await this.options.repository.attachSession(event.conversation_id, event.session_id)
         this.resumeError = null
         break
       case 'session_loaded':
-        if (event.conversation_id !== document.selectedId) return
+        if (event.conversation_id !== selectedId) return
         this.resumeError = null
         break
       case 'session_load_failed':
-        if (event.conversation_id !== document.selectedId) return
+        if (event.conversation_id !== selectedId) return
         this.resumeError = event.message
         break
       case 'session_history':
-        if (event.conversation_id !== document.selectedId || event.session_id !== selected?.hermesSessionId) return
+        if (event.conversation_id !== selectedId || event.session_id !== selected?.hermesSessionId) return
         this.messages.push(message(event.role, event.text))
         if (event.role === 'user') this.retryPrompt = event.text
         break
       case 'assistant_delta': {
-        if (event.session_id !== selected?.hermesSessionId) return
+        if (event.session_id !== selected?.hermesSessionId || (event.conversation_id && event.conversation_id !== selectedId)) return
         if (this.activeRequestId && event.request_id !== this.activeRequestId) return
         this.activeRequestId ??= event.request_id
         const assistant = this.ensureAssistant(event.request_id)
