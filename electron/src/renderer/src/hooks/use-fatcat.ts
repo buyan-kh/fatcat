@@ -45,10 +45,6 @@ export function useFatCat() {
     setAppearance: (appearance: AppearancePreference) => api && run(() => api.setAppearance(appearance)),
     restartAgent: () => api && run(() => api.restartAgent()),
     getDiagnostics: () => api ? run(() => api.getDiagnostics()) : Promise.resolve(undefined),
-    minimizeWindow: () => api && run(() => api.minimizeWindow()),
-    toggleMaximizeWindow: () => api ? run(() => api.toggleMaximizeWindow()) : Promise.resolve(undefined),
-    isWindowMaximized: () => api ? run(() => api.isWindowMaximized()) : Promise.resolve(undefined),
-    closeWindow: () => api && run(() => api.closeWindow()),
     clearNotice: () => dispatch({ type: 'clear-notice' }),
   }), [api, run])
 

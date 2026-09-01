@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import type { AgentDiagnostics } from '@shared/api'
 import { AppSidebar } from '@renderer/components/app-sidebar'
 import { ConversationHeader } from '@renderer/components/conversation-header'
@@ -7,7 +7,6 @@ import { SettingsDialog } from '@renderer/components/settings-dialog'
 import { Transcript } from '@renderer/components/transcript'
 import { Button } from '@renderer/components/ui/button'
 import { TooltipProvider } from '@renderer/components/ui/tooltip'
-import { WindowControls } from '@renderer/components/window-controls'
 import { useFatCat } from '@renderer/hooks/use-fatcat'
 import { useAppearance } from '@renderer/hooks/use-appearance'
 
@@ -15,17 +14,10 @@ export default function App() {
   const { state, commands } = useFatCat()
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
-  const [windowMaximized, setWindowMaximized] = useState(false)
   const [diagnostics, setDiagnostics] = useState<AgentDiagnostics>()
   const snapshot = state.snapshot
   const selected = snapshot?.conversations.find((conversation) => conversation.id === snapshot.selectedId)
   useAppearance(snapshot?.appearance)
-
-  useEffect(() => {
-    void Promise.resolve(commands.isWindowMaximized()).then((value) => {
-      if (typeof value === 'boolean') setWindowMaximized(value)
-    })
-  }, [commands])
 
   const openSettings = () => {
     setSettingsOpen(true)
@@ -64,15 +56,7 @@ export default function App() {
           onOpenSettings={openSettings}
         />
         <section className="flex min-w-0 flex-1 flex-col">
-          <ConversationHeader
-            conversation={selected}
-            connection={snapshot.connection}
-            onChooseWorkspace={() => { void chooseWorkspace() }}
-            windowMaximized={windowMaximized}
-            onMinimize={() => { void commands.minimizeWindow() }}
-            onToggleMaximize={() => { void Promise.resolve(commands.toggleMaximizeWindow()).then((value) => { if (typeof value === 'boolean') setWindowMaximized(value) }) }}
-            onClose={() => { void commands.closeWindow() }}
-          />
+          <ConversationHeader conversation={selected} connection={snapshot.connection} onChooseWorkspace={() => { void chooseWorkspace() }} />
           <Transcript
             messages={snapshot.messages}
             connection={snapshot.connection}

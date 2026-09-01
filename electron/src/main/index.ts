@@ -65,8 +65,7 @@ async function createWindow(): Promise<void> {
     backgroundColor: nativeTheme.shouldUseDarkColors ? '#1c1c1c' : '#fafafa',
     title: 'FatCat',
     titleBarStyle: 'hiddenInset',
-    // The renderer owns the top-bar controls; keep native traffic lights out of the content area.
-    trafficLightPosition: { x: -100, y: -100 },
+    trafficLightPosition: { x: 14, y: 14 },
     webPreferences: {
       preload: join(__dirname, '../preload/index.cjs'),
       contextIsolation: true,
@@ -117,15 +116,6 @@ function registerIpc(fatcat: FatCatService): void {
   })
   ipcMain.handle(FATCAT_INVOKE_CHANNELS.restartAgent, () => fatcat.restartAgent())
   ipcMain.handle(FATCAT_INVOKE_CHANNELS.getDiagnostics, () => fatcat.getDiagnostics())
-  ipcMain.handle(FATCAT_INVOKE_CHANNELS.minimizeWindow, () => { mainWindow?.minimize() })
-  ipcMain.handle(FATCAT_INVOKE_CHANNELS.toggleMaximizeWindow, () => {
-    if (!mainWindow) return false
-    if (mainWindow.isMaximized()) mainWindow.unmaximize()
-    else mainWindow.maximize()
-    return mainWindow.isMaximized()
-  })
-  ipcMain.handle(FATCAT_INVOKE_CHANNELS.isWindowMaximized, () => mainWindow?.isMaximized() ?? false)
-  ipcMain.handle(FATCAT_INVOKE_CHANNELS.closeWindow, () => { mainWindow?.close() })
 }
 
 export function isSafeExternalUrl(value: string): boolean {

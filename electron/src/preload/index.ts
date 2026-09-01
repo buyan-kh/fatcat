@@ -20,10 +20,6 @@ const api: FatCatAPI = {
   setAppearance: (appearance: AppearancePreference) => ipcRenderer.invoke(FATCAT_INVOKE_CHANNELS.setAppearance, appearance),
   restartAgent: () => ipcRenderer.invoke(FATCAT_INVOKE_CHANNELS.restartAgent),
   getDiagnostics: () => ipcRenderer.invoke(FATCAT_INVOKE_CHANNELS.getDiagnostics),
-  minimizeWindow: () => ipcRenderer.invoke(FATCAT_INVOKE_CHANNELS.minimizeWindow),
-  toggleMaximizeWindow: () => ipcRenderer.invoke(FATCAT_INVOKE_CHANNELS.toggleMaximizeWindow),
-  isWindowMaximized: () => ipcRenderer.invoke(FATCAT_INVOKE_CHANNELS.isWindowMaximized),
-  closeWindow: () => ipcRenderer.invoke(FATCAT_INVOKE_CHANNELS.closeWindow),
   subscribe: (listener) => {
     const handler = (_event: Electron.IpcRendererEvent, payload: FatCatEvent) => listener(payload)
     ipcRenderer.on(FATCAT_EVENT_CHANNEL, handler)
