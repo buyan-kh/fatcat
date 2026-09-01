@@ -75,8 +75,8 @@
 
 * {
   border-color: var(--border);
-  /* CSS corner smoothing where supported; the radius below is the fallback. */
-  corner-shape: squircle;
+  /* 60% corner smoothing where supported; radius remains the fallback. */
+  corner-shape: superellipse(0.6);
 }
 
 svg { stroke-width: 1; }
