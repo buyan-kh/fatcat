@@ -1705,6 +1705,8 @@ final class PetWindowController: NSObject, NSWindowDelegate {
     private var pendingPrompts: [PendingPrompt] = []
     private var pendingSessionConversationID: String?
     private var ignoredRequestIDs = Set<String>()
+    private var finishedRequestIDs = Set<String>()
+    private var historyGate = FatCatSessionHistoryGate()
     private var lastSpokenRequestID: String?
     private var activeSessionID: String?
     private var lastObservedApp: String?
@@ -2060,6 +2062,7 @@ final class PetWindowController: NSObject, NSWindowDelegate {
         model.chatScrollState.opened()
         activeSessionID = record.hermesSessionID
         if let sessionID = record.hermesSessionID {
+            historyGate.begin(sessionID: sessionID)
             agent.loadSession(conversationID: record.id, sessionID: sessionID, cwd: record.workspacePath)
         } else if !record.lastPreview.isEmpty {
             model.appendSystem("This older conversation has no saved Hermes session. Start a new chat to continue it.")
@@ -2102,6 +2105,7 @@ final class PetWindowController: NSObject, NSWindowDelegate {
         model.retryState.clear()
         model.chatScrollState.opened()
         activeSessionID = sessionID
+        historyGate.begin(sessionID: sessionID)
         agent.loadSession(conversationID: record.id, sessionID: sessionID, cwd: record.workspacePath)
     }
 
@@ -2120,6 +2124,8 @@ final class PetWindowController: NSObject, NSWindowDelegate {
     private func handleAgentMessage(_ message: FatCatIPCMessage) {
         switch message {
         case let .conversationSnapshot(selectedID, records):
+            let previousSelectedID = model.selectedConversationID
+            let previousSessionID = activeSessionID
             let now = Date()
             let mapped = records.map { record in
                 FatCatConversationRecord(
@@ -2142,16 +2148,22 @@ final class PetWindowController: NSObject, NSWindowDelegate {
             model.selectedConversationID = effectiveSelectedID
             guard let selected = records.first(where: { $0.id == effectiveSelectedID }) else {
                 activeSessionID = nil
+                historyGate = FatCatSessionHistoryGate()
                 model.replaceMessages([])
+                return
+            }
+            if effectiveSelectedID == previousSelectedID, selected.sessionID == previousSessionID {
                 return
             }
             model.replaceMessages([])
             guard let sessionID = selected.sessionID, !sessionID.isEmpty else {
                 activeSessionID = nil
+                historyGate = FatCatSessionHistoryGate()
                 return
             }
             if activeSessionID != sessionID {
                 activeSessionID = sessionID
+                historyGate.begin(sessionID: sessionID)
                 agent.loadSession(conversationID: selected.id, sessionID: sessionID, cwd: selected.workspacePath)
             }
         case let .messageAdded(conversationID, sessionID, message):
@@ -2164,7 +2176,7 @@ final class PetWindowController: NSObject, NSWindowDelegate {
                 model.appendSystem(message.text)
             }
         case let .assistantDelta(requestID, sessionID, text):
-            guard isActiveSession(sessionID), !ignoredRequestIDs.contains(requestID) else { return }
+            guard isActiveSession(sessionID), acceptsLiveRequest(requestID) else { return }
             model.handleLife(.hermes(.streamDelta))
             if model.currentRequestID != requestID { model.beginAssistant(requestID: requestID) }
             model.appendAssistant(text, requestID: requestID)
@@ -2208,15 +2220,19 @@ final class PetWindowController: NSObject, NSWindowDelegate {
             guard isActiveSession(event.sessionID) else { return }
             switch event.kind {
             case "message.started":
-                let requestID = event.requestID ?? event.eventID
+                guard let requestID = event.requestID, acceptsLiveRequest(requestID) else { return }
+                finishedRequestIDs.remove(requestID)
                 model.beginAssistant(requestID: requestID)
                 model.handleLife(.hermes(.thought))
             case "message.delta":
-                let requestID = event.requestID ?? event.eventID
+                guard let requestID = event.requestID, acceptsLiveRequest(requestID) else { return }
                 model.appendAssistant(event.details["text"] ?? event.summary, requestID: requestID)
                 model.handleLife(.hermes(.streamDelta))
             case "message.completed":
-                if let requestID = event.requestID { model.completeAssistant(requestID: requestID) }
+                guard let requestID = event.requestID, model.currentRequestID == requestID,
+                      !finishedRequestIDs.contains(requestID) else { return }
+                finishedRequestIDs.insert(requestID)
+                model.completeAssistant(requestID: requestID)
                 model.handleLife(.hermes(.turnCompleted))
             case "session.state":
                 if let rawState = event.details["state"], let state = FatCatAgentState(rawValue: rawState) {
@@ -2246,6 +2262,7 @@ final class PetWindowController: NSObject, NSWindowDelegate {
             handleAgentState(state)
         case let .sessionState(state, sessionID, requestID):
             guard isActiveSession(sessionID) else { return }
+            if let requestID, !acceptsLiveRequest(requestID), state != .ready { return }
             if let requestID, let currentRequestID = model.currentRequestID,
                requestID != currentRequestID, [.completed, .failed, .stopping].contains(state) { return }
             handleAgentState(state, requestID: requestID)
@@ -2255,6 +2272,7 @@ final class PetWindowController: NSObject, NSWindowDelegate {
             if let requestID = model.currentRequestID,
                model.messages.contains(where: { $0.requestID == requestID }) {
                 model.failAssistant(requestID: requestID, message: message)
+                finishedRequestIDs.insert(requestID)
             } else {
                 model.appendSystem(message)
                 model.isGenerating = false
@@ -2276,6 +2294,7 @@ final class PetWindowController: NSObject, NSWindowDelegate {
         case let .sessionLoaded(_, conversationID, sessionID):
             guard conversationID == model.selectedConversationID else { return }
             activeSessionID = sessionID
+            historyGate.finish(sessionID: sessionID)
             model.resumeError = nil
             try? conversationStore.attachHermesSession(sessionID, to: conversationID)
             model.conversations = conversationStore.records
@@ -2284,8 +2303,9 @@ final class PetWindowController: NSObject, NSWindowDelegate {
             activeSessionID = nil
             model.resumeError = message
             model.appendSystem(message)
-        case let .sessionHistory(conversationID, _, role, text):
-            guard conversationID == model.selectedConversationID else { return }
+        case let .sessionHistory(conversationID, sessionID, role, text):
+            guard conversationID == model.selectedConversationID, sessionID == activeSessionID,
+                  historyGate.accepts(sessionID: sessionID, role: role, text: text) else { return }
             if role == "user" { model.appendUser(text) }
             else if role == "assistant" { let requestID = UUID().uuidString; model.beginAssistant(requestID: requestID); model.appendAssistant(text, requestID: requestID); model.completeAssistant(requestID: requestID) }
         case .newSession, .loadSession, .listSessions, .sessionList, .cancel, .hello, .clientHello, .helloAck, .petClicked, .conversationRename, .conversationDelete, .userMessage, .observation, .shutdown, .shutdownAck,
@@ -2300,6 +2320,14 @@ final class PetWindowController: NSObject, NSWindowDelegate {
         return activeSessionID == sessionID && record.hermesSessionID == sessionID
     }
 
+    private func acceptsLiveRequest(_ requestID: String) -> Bool {
+        FatCatLiveRequestPolicy.accepts(
+            activeRequestID: model.currentRequestID,
+            incomingRequestID: requestID,
+            ignoredRequestIDs: ignoredRequestIDs.union(finishedRequestIDs)
+        )
+    }
+
     private func handleAgentState(_ state: FatCatAgentState, requestID: String? = nil) {
         switch state {
         case .connecting: model.agentStatus = "Connecting…"
@@ -2310,7 +2338,10 @@ final class PetWindowController: NSObject, NSWindowDelegate {
             model.handleLife(.hermes(.turnFailed))
         case .completed:
             let completedRequestID = requestID ?? model.currentRequestID
-            if let completedRequestID { model.completeAssistant(requestID: completedRequestID) }
+            if let completedRequestID {
+                finishedRequestIDs.insert(completedRequestID)
+                model.completeAssistant(requestID: completedRequestID)
+            }
             model.handleLife(.hermes(.turnCompleted))
             if model.speakReplies,
                let completedRequestID,
@@ -2323,7 +2354,10 @@ final class PetWindowController: NSObject, NSWindowDelegate {
                 startNextPendingPrompt(for: conversationID, sessionID: sessionID)
             }
         case .failed:
-            if let requestID = requestID ?? model.currentRequestID { model.failAssistant(requestID: requestID, message: "FatCat Agent stopped before completing the response.") }
+            if let requestID = requestID ?? model.currentRequestID {
+                finishedRequestIDs.insert(requestID)
+                model.failAssistant(requestID: requestID, message: "FatCat Agent stopped before completing the response.")
+            }
             model.handleLife(.hermes(.turnFailed))
             if let conversationID = model.selectedConversationID, let sessionID = activeSessionID {
                 startNextPendingPrompt(for: conversationID, sessionID: sessionID)

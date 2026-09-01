@@ -29,6 +29,27 @@ struct FatCatChatStateTests {
         #expect(transcript.messages.last?.isStreaming == false)
     }
 
+    @Test func staleLiveRequestCannotChangeTheActiveTranscript() {
+        #expect(FatCatLiveRequestPolicy.accepts(activeRequestID: "r1", incomingRequestID: "r2") == false)
+        #expect(FatCatLiveRequestPolicy.accepts(activeRequestID: "r1", incomingRequestID: "r1"))
+        #expect(FatCatLiveRequestPolicy.accepts(activeRequestID: nil, incomingRequestID: "r1"))
+        #expect(FatCatLiveRequestPolicy.accepts(activeRequestID: nil, incomingRequestID: "r1", ignoredRequestIDs: ["r1"]) == false)
+    }
+
+    @Test func sessionHistoryGateOnlyAcceptsRecordsDuringOneRestore() {
+        var gate = FatCatSessionHistoryGate()
+        gate.begin(sessionID: "s1")
+        let first = gate.accepts(sessionID: "s1", role: "assistant", text: "Restored")
+        let duplicate = gate.accepts(sessionID: "s1", role: "assistant", text: "Restored")
+        let wrongSession = gate.accepts(sessionID: "s2", role: "assistant", text: "Wrong session")
+        #expect(first)
+        #expect(duplicate == false)
+        #expect(wrongSession == false)
+        gate.finish(sessionID: "s1")
+        let afterRestore = gate.accepts(sessionID: "s1", role: "user", text: "After restore")
+        #expect(afterRestore == false)
+    }
+
     @Test func scrollStateKeepsUnreadWhenUserReadsOlderMessages() {
         var state = ChatScrollState()
         state.updateViewport(isNearBottom: false)
