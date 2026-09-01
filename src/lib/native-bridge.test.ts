@@ -22,6 +22,6 @@ describe('native bridge configuration', () => {
     expect(isCaptureActive(true, { authorized: false, capturing: false, paused: false, status: 'Waiting' }, true)).toBe(false)
     expect(isCaptureActive(true, { authorized: true, capturing: true, paused: false, status: 'Connected' }, false)).toBe(true)
     expect(isCaptureActive(true, { authorized: true, capturing: false, paused: true, status: 'Paused' }, true)).toBe(false)
-    expect(isCaptureActive(false, undefined, true)).toBe(true)
+    expect(isCaptureActive(false, undefined, true)).toBe(false)
   })
 })

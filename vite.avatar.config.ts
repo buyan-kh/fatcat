@@ -17,7 +17,7 @@ export default defineConfig({
   ],
   base: './',
   build: {
-    outDir: 'macos/PeppaAnywhere/Sources/PeppaAnywhere/Resources/FatCatAvatar',
+    outDir: 'macos/FatCat/Sources/FatCat/Resources/FatCatAvatar',
     emptyOutDir: true,
     rollupOptions: {
       input: 'avatar.html',

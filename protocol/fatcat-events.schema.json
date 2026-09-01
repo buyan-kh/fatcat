@@ -1,0 +1,55 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://fatcat.local/protocol/fatcat-events.schema.json",
+  "title": "FatCat Agent local socket events",
+  "description": "Versioned newline-delimited JSON exchanged only over FatCat's private Unix domain socket.",
+  "type": "object",
+  "required": ["version", "type"],
+  "properties": {
+    "version": { "const": 1 },
+    "type": {
+      "enum": ["hello", "hello_ack", "pet_clicked", "conversation_snapshot", "message_added", "conversation_rename", "conversation_delete", "new_session", "load_session", "list_sessions", "session_ready", "session_loaded", "session_load_failed", "session_history", "session_list", "user_message", "cancel", "observation", "plan", "tool_call", "provider_status", "provider_inventory", "provider_models", "provider_set_default", "provider_set_credential_ref", "provider_set_base_url", "provider_validate", "provider_inventory_result", "provider_models_result", "provider_configured", "provider_validation_result", "assistant_delta", "state", "proposed_action", "permission_request", "action_result", "verification_result", "memory_update", "error", "shutdown", "shutdown_ack"]
+    },
+    "client": { "enum": ["native_pet", "electron_chat"] },
+    "client_id": { "type": "string" },
+    "event_id": { "type": "string" },
+    "pet_id": { "type": "string" },
+    "selected_id": { "type": ["string", "null"] },
+    "request_id": { "type": ["string", "null"] },
+    "session_id": { "type": ["string", "null"] },
+    "conversation_id": { "type": ["string", "null"] },
+    "cwd": { "type": ["string", "null"] },
+    "agent_version": { "type": "string" },
+    "text": { "type": "string" },
+    "title": { "type": "string" },
+    "message": { "type": ["string", "object"] },
+    "state": { "type": "string" },
+    "active_app": { "type": "string" },
+    "window": { "type": ["string", "null"] },
+    "visible_text": { "type": "array", "items": { "type": "string" } },
+    "confidence": { "type": "number", "minimum": 0, "maximum": 1 },
+    "steps": { "type": "array", "items": { "type": "string" } },
+    "name": { "type": "string" },
+    "arguments": { "type": "object", "additionalProperties": { "type": "string" } },
+    "provider_id": { "type": "string" },
+    "provider": { "type": "string" },
+    "providers": { "type": "array", "items": { "type": "object" } },
+    "models": { "type": "array", "items": { "type": "string" } },
+    "model": { "type": "string" },
+    "refresh": { "type": "boolean" },
+    "credential_ref": { "type": "string" },
+    "base_url": { "type": "string" },
+    "operation": { "type": "string" },
+    "usable": { "type": "boolean" },
+    "authenticated": { "type": "boolean" },
+    "action": { "type": "string" },
+    "risk": { "type": "string" },
+    "reason": { "type": "string" },
+    "success": { "type": "boolean" },
+    "detail": { "type": "string" }
+    ,"role": { "type": "string" }
+    ,"sessions": { "type": "array", "items": { "type": "object", "additionalProperties": { "type": "string" } } }
+    ,"records": { "type": "array", "items": { "type": "object" } }
+  },
+  "additionalProperties": false
+}

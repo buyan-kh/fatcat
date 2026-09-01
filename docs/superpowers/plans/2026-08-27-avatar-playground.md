@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Build a standalone light-theme Vite/React playground in `prepst.com/animations` for inspecting supplied Bible Strong avatar expressions, animation timelines, imported definitions, and experiment notes.
+**Goal:** Build a standalone light-theme Vite/React playground in `fatcat.com/animations` for inspecting supplied Bible Strong avatar expressions, animation timelines, imported definitions, and experiment notes.
 
 **Architecture:** A small client-only React app owns the active definition, selected target, playback controls, import errors, and notes. Focused components render the preview, definition rail, expression gallery, animation gallery, inspector, and import controls. Pure helpers normalize imported JSON and persist notes so the test suite does not depend on the DOM.
 
@@ -21,13 +21,13 @@
 - Create: `vite.config.ts`
 - Create: `src/vite-env.d.ts`
 - Create: `src/main.tsx`
-- Copy: `public/strobi.avatar.json` from the supplied landing asset, preserving the Peppa display name already used by the project
+- Copy: `public/fatcat.avatar.json` from the supplied landing asset, preserving the FatCat display name already used by the project
 
 - [ ] **Step 1: Create the package manifest with exact scripts and dependencies**
 
 ```json
 {
-  "name": "prepst-avatar-playground",
+  "name": "fatcat-avatar-playground",
   "private": true,
   "version": "0.1.0",
   "type": "module",
@@ -65,12 +65,12 @@
 
 - [ ] **Step 4: Copy and validate the bundled definition**
 
-Copy the already renamed `public/strobi.avatar.json` from the landing project. Validate it with `parseAvatarDefinition` in a one-line Node check and expect `Peppa`, 28 expressions, and 23 animations.
+Copy the already renamed `public/fatcat.avatar.json` from the landing project. Validate it with `parseAvatarDefinition` in a one-line Node check and expect `FatCat`, 28 expressions, and 23 animations.
 
 - [ ] **Step 5: Commit the scaffold**
 
 ```bash
-git add package.json package-lock.json index.html tsconfig.json tsconfig.app.json tsconfig.node.json vite.config.ts src/vite-env.d.ts src/main.tsx public/strobi.avatar.json
+git add package.json package-lock.json index.html tsconfig.json tsconfig.app.json tsconfig.node.json vite.config.ts src/vite-env.d.ts src/main.tsx public/fatcat.avatar.json
 git commit -m "chore: scaffold avatar playground"
 ```
 
@@ -146,7 +146,7 @@ When an expression is selected, show its head coordinates, eye sizes, eye spacin
 
 - [ ] **Step 5: Compose App state and interactions**
 
-Bundle the Peppa definition as the initial state. Track `activeDefinition`, `selectedExpression`, `selectedAnimation`, `notes`, and import error. Expression selection sets only `selectedExpression`; animation selection sets only `selectedAnimation`. Load notes once from `localStorage` and persist on change. Show a definition tab strip if multiple imported definitions exist, with remove controls for imported definitions only.
+Bundle the FatCat definition as the initial state. Track `activeDefinition`, `selectedExpression`, `selectedAnimation`, `notes`, and import error. Expression selection sets only `selectedExpression`; animation selection sets only `selectedAnimation`. Load notes once from `localStorage` and persist on change. Show a definition tab strip if multiple imported definitions exist, with remove controls for imported definitions only.
 
 - [ ] **Step 6: Commit the interactive components**
 
@@ -186,7 +186,7 @@ git commit -m "style: add light avatar lab interface"
 
 - [ ] **Step 1: Add run instructions and feature notes**
 
-Document `npm install`, `npm run dev`, `npm test`, and `npm run build`. Explain that the app starts with Peppa and accepts additional valid Bible Strong avatar definition JSON files.
+Document `npm install`, `npm run dev`, `npm test`, and `npm run build`. Explain that the app starts with FatCat and accepts additional valid Bible Strong avatar definition JSON files.
 
 - [ ] **Step 2: Run the full automated checks**
 
@@ -194,7 +194,7 @@ Run `npm test`, `npm run lint`, and `npm run build`. Expect all tests to pass, T
 
 - [ ] **Step 3: Run a dev-server smoke test**
 
-Start `npm run dev -- --host 127.0.0.1`, load the page in the available browser tool, and verify the page title, Peppa preview, expression count, animation count, and controls are visible. Click one expression, click one animation, and verify the selected states update. Uploading malformed JSON must show an error and preserve Peppa.
+Start `npm run dev -- --host 127.0.0.1`, load the page in the available browser tool, and verify the page title, FatCat preview, expression count, animation count, and controls are visible. Click one expression, click one animation, and verify the selected states update. Uploading malformed JSON must show an error and preserve FatCat.
 
 - [ ] **Step 4: Commit verification documentation**
 

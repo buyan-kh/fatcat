@@ -4,7 +4,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url'
 import { describe, expect, it } from 'vitest'
 
 const webAppDirectory = fileURLToPath(
-  new URL('../../macos/PeppaAnywhere/Sources/PeppaAnywhere/Resources/FatCatAvatar/', import.meta.url),
+  new URL('../../macos/FatCat/Sources/FatCat/Resources/FatCatAvatar/', import.meta.url),
 )
 const bundledAvatarURL = pathToFileURL(`${webAppDirectory}/avatar.html`)
 

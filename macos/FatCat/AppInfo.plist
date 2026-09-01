@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CFBundleDisplayName</key>
+	<string>FatCat</string>
+	<key>CFBundleExecutable</key>
+	<string>FatCat</string>
+	<key>CFBundleIdentifier</key>
+	<string>com.buyan.fatcat</string>
+	<key>CFBundleInfoDictionaryVersion</key>
+	<string>6.0</string>
+	<key>CFBundleName</key>
+	<string>FatCat</string>
+	<key>CFBundlePackageType</key>
+	<string>APPL</string>
+	<key>CFBundleShortVersionString</key>
+	<string>0.1.0</string>
+	<key>CFBundleVersion</key>
+	<string>1</string>
+	<key>LSMinimumSystemVersion</key>
+	<string>13.0</string>
+	<key>LSUIElement</key>
+	<true/>
+	<key>NSHighResolutionCapable</key>
+	<true/>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>FatCat uses the microphone only while you hold a voice conversation with your pet.</string>
+	<key>NSScreenCaptureUsageDescription</key>
+	<string>FatCat uses Screen Recording permission to understand local screen context without retaining raw screenshots.</string>
+	<key>NSSpeechRecognitionUsageDescription</key>
+	<string>FatCat converts your spoken question to text so it can answer in the shared conversation.</string>
+</dict>
+</plist>

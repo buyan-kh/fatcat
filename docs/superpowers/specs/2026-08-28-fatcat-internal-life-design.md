@@ -30,7 +30,7 @@ Hermes already has conversation, tools, memory, skills, models, coding, and web 
           └──────────────┘  └──────────────┘
 ```
 
-`FatCatLife` in `PeppaAnywhereCore` is a display reducer, not an agent. It maps user, screen, clock, and Hermes causes onto an animation key for the existing WKWebView avatar. Chat transcript, Hermes sessions, pending prompts, and Peppa IPC stay as they are. Memory stays in Hermes; FatCat only displays and selects sessions.
+`FatCatLife` in `FatCatCore` is a display reducer, not an agent. It maps user, screen, clock, and Hermes causes onto an animation key for the existing WKWebView avatar. Chat transcript, Hermes sessions, pending prompts, and FatCat IPC stay as they are. Memory stays in Hermes; FatCat only displays and selects sessions.
 
 ## Hermes state → face
 
@@ -63,4 +63,4 @@ Voice STT/TTS, Python observation consumption, native action execution, permissi
 
 ## Testing
 
-Swift tests in `FatCatLifeTests` cover idle default, screen curiosity, inactivity sleep, send overlay, Hermes mapping including search tools, celebration gate, ignored agent-idle, pause, task continuity, and new-chat clear. Existing chat, IPC, and `PeppaStateMachine` tests must keep passing.
+Swift tests in `FatCatLifeTests` cover idle default, screen curiosity, inactivity sleep, send overlay, Hermes mapping including search tools, celebration gate, ignored agent-idle, pause, task continuity, and new-chat clear. Existing chat, IPC, and `FatCatStateMachine` tests must keep passing.

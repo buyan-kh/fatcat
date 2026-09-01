@@ -1,0 +1,215 @@
+import { EventEmitter } from 'node:events'
+import { mkdtemp } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+import type { AgentEvent, ClientCommand } from '../../shared/protocol'
+import { ConversationRepository } from '../persistence/conversations'
+import { FatCatService } from './fatcat-service'
+
+class TestTransport extends EventEmitter {
+  isConnected = true
+  commands: ClientCommand[] = []
+  send(command: ClientCommand) { this.commands.push(command) }
+  event(event: AgentEvent) { this.emit('event', event) }
+}
+
+describe('FatCatService', () => {
+  let transport: TestTransport
+  let service: FatCatService
+
+  beforeEach(async () => {
+    const root = await mkdtemp(join(tmpdir(), 'fatcat-service-'))
+    transport = new TestTransport()
+    const repository = await ConversationRepository.open(join(root, 'conversations.json'))
+    service = new FatCatService({
+      repository,
+      transport,
+      chooseWorkspace: async () => '/tmp/chosen-workspace',
+      diagnostics: async () => ({ agentPath: '/agent', socketPath: '/socket', running: true, lines: [] }),
+    })
+  })
+
+  it('creates a Hermes session before sending a real streamed turn', async () => {
+    const record = await service.createConversation('/tmp/project')
+    const creation = transport.commands.at(-1)
+    expect(creation).toMatchObject({ type: 'new_session', conversation_id: record.id, cwd: '/tmp/project' })
+
+    transport.event({ version: 1, type: 'session_ready', request_id: requestId(creation!), conversation_id: record.id, session_id: 's1' })
+    await vi.waitFor(async () => expect((await service.snapshot()).conversations[0]?.hermesSessionId).toBe('s1'))
+
+    await service.sendMessage('Hello Hermes')
+    const turn = transport.commands.at(-1)
+    expect(turn).toMatchObject({ type: 'user_message', conversation_id: record.id, session_id: 's1', text: 'Hello Hermes' })
+    expect((await service.snapshot()).messages.at(-1)).toMatchObject({ role: 'user', text: 'Hello Hermes' })
+
+    transport.event({ version: 1, type: 'assistant_delta', request_id: requestId(turn!), session_id: 's1', text: 'Hello ' })
+    transport.event({ version: 1, type: 'assistant_delta', request_id: requestId(turn!), session_id: 's1', text: 'back.' })
+    transport.event({ version: 1, type: 'plan', request_id: requestId(turn!), session_id: 's1', steps: ['Inspect the workspace'] })
+    transport.event({ version: 1, type: 'tool_call', request_id: 'tool-1', name: 'read_file', arguments: { path: 'README.md' } })
+    transport.event({ version: 1, type: 'action_result', request_id: 'tool-1', success: true, detail: 'Read complete.' })
+    transport.event({ version: 1, type: 'state', state: 'completed', session_id: 's1', request_id: requestId(turn!) })
+
+    await vi.waitFor(async () => {
+      const snapshot = await service.snapshot()
+      expect(snapshot.isGenerating).toBe(false)
+      expect(snapshot.messages.at(-1)).toMatchObject({ role: 'assistant', text: 'Hello back.', isStreaming: false })
+      expect(snapshot.messages.at(-1)?.activities.find((activity) => activity.kind === 'plan')).toMatchObject({ status: 'completed' })
+      expect(snapshot.messages.at(-1)?.activities.find((activity) => activity.label === 'read_file')).toMatchObject({ status: 'completed' })
+    })
+  })
+
+  it('enforces one turn and ignores late deltas after cancellation', async () => {
+    const record = await service.createConversation('/tmp/project')
+    const creation = transport.commands.at(-1)!
+    transport.event({ version: 1, type: 'session_ready', request_id: requestId(creation), conversation_id: record.id, session_id: 's1' })
+    await vi.waitFor(async () => expect((await service.snapshot()).conversations[0]?.hermesSessionId).toBe('s1'))
+    await service.sendMessage('First')
+    const turn = transport.commands.at(-1)!
+    await expect(service.sendMessage('Second')).rejects.toThrow('already running')
+
+    await service.cancelTurn()
+    transport.event({ version: 1, type: 'assistant_delta', request_id: requestId(turn), session_id: 's1', text: 'too late' })
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    const snapshot = await service.snapshot()
+    expect(snapshot.isGenerating).toBe(false)
+    expect(snapshot.messages.some((message) => message.text.includes('too late'))).toBe(false)
+  })
+
+  it('loads authoritative history and rejects mismatched sessions', async () => {
+    const record = await service.createConversation('/tmp/project')
+    const creation = transport.commands.at(-1)!
+    transport.event({ version: 1, type: 'session_ready', request_id: requestId(creation), conversation_id: record.id, session_id: 's1' })
+    await vi.waitFor(async () => expect((await service.snapshot()).conversations[0]?.hermesSessionId).toBe('s1'))
+    await service.selectConversation(record.id)
+    expect(transport.commands.at(-1)).toMatchObject({ type: 'load_session', session_id: 's1' })
+
+    transport.event({ version: 1, type: 'session_history', conversation_id: record.id, session_id: 'wrong', role: 'assistant', text: 'Ignore me' })
+    transport.event({ version: 1, type: 'session_history', conversation_id: record.id, session_id: 's1', role: 'assistant', text: 'Restored' })
+    await vi.waitFor(async () => expect((await service.snapshot()).messages.map((message) => message.text)).toEqual(['Restored']))
+  })
+
+  it('uses the native workspace chooser to create a new conversation', async () => {
+    const workspace = await service.chooseWorkspace()
+    expect(workspace).toBe('/tmp/chosen-workspace')
+    if (!workspace) throw new Error('Expected a workspace')
+    const record = await service.createConversation(workspace)
+    expect(record.workspacePath).toBe('/tmp/chosen-workspace')
+  })
+
+  it('uses shared agent snapshots and renders messages sent by the native pet', async () => {
+    transport.event({
+      version: 1,
+      type: 'conversation_snapshot',
+      selected_id: 'c1',
+      records: [{ id: 'c1', title: 'Shared', workspace_path: '/tmp', session_id: 's1' }],
+    })
+    await vi.waitFor(async () => expect((await service.snapshot()).selectedId).toBe('c1'))
+
+    transport.event({
+      version: 1,
+      type: 'message_added',
+      conversation_id: 'c1',
+      session_id: 's1',
+      message: { id: 'native-request', role: 'user', text: 'From the pet' },
+    })
+    transport.event({ version: 1, type: 'assistant_delta', request_id: 'native-request', conversation_id: 'c1', session_id: 's1', text: 'Shared reply' })
+    transport.event({ version: 1, type: 'state', state: 'completed', conversation_id: 'c1', session_id: 's1', request_id: 'native-request' })
+
+    await vi.waitFor(async () => {
+      const snapshot = await service.snapshot()
+      expect(snapshot.messages.map(({ role, text }) => ({ role, text }))).toEqual([
+        { role: 'user', text: 'From the pet' },
+        { role: 'assistant', text: 'Shared reply' },
+      ])
+      expect(snapshot.isGenerating).toBe(false)
+    })
+  })
+
+  it('keeps Electron on its own selected conversation when native changes the shared selection', async () => {
+    transport.event({
+      version: 1,
+      type: 'conversation_snapshot',
+      selected_id: 'electron-chat',
+      records: [{ id: 'electron-chat', title: 'Electron chat', workspace_path: '/tmp', session_id: 'electron-session' }],
+    })
+    await vi.waitFor(async () => expect((await service.snapshot()).selectedId).toBe('electron-chat'))
+
+    transport.event({
+      version: 1,
+      type: 'conversation_snapshot',
+      selected_id: 'native-chat',
+      records: [
+        { id: 'electron-chat', title: 'Electron chat', workspace_path: '/tmp', session_id: 'electron-session' },
+        { id: 'native-chat', title: 'Native chat', workspace_path: '/tmp', session_id: 'native-session' },
+      ],
+    })
+
+    transport.event({ version: 1, type: 'session_history', conversation_id: 'electron-chat', session_id: 'electron-session', role: 'assistant', text: 'Electron history' })
+    await vi.waitFor(async () => {
+      const snapshot = await service.snapshot()
+      expect(snapshot.selectedId).toBe('electron-chat')
+      expect(snapshot.messages.map((message) => message.text)).toEqual(['Electron history'])
+    })
+    await service.sendMessage('Reply in Electron chat')
+    expect(transport.commands.at(-1)).toMatchObject({ type: 'user_message', conversation_id: 'electron-chat', session_id: 'electron-session' })
+  })
+
+  it('accepts the new Electron session even after a native snapshot arrives', async () => {
+    const record = await service.createConversation('/tmp/project')
+    const creation = transport.commands.at(-1)!
+    transport.event({ version: 1, type: 'conversation_snapshot', selected_id: 'native-chat', records: [{ id: 'native-chat', title: 'Native chat', workspace_path: '/tmp', session_id: 'native-session' }] })
+    transport.event({ version: 1, type: 'session_ready', request_id: requestId(creation), conversation_id: record.id, session_id: 'electron-session' })
+    await vi.waitFor(async () => expect((await service.snapshot()).conversations.find((item) => item.id === record.id)?.hermesSessionId).toBe('electron-session'))
+    await service.sendMessage('New chat reply')
+    expect(transport.commands.at(-1)).toMatchObject({ type: 'user_message', conversation_id: record.id, session_id: 'electron-session' })
+  })
+
+  it('reduces generic Hermes tool lifecycle events without tool-specific branches', async () => {
+    const record = await service.createConversation('/tmp/project')
+    const creation = transport.commands.at(-1)!
+    transport.event({ version: 1, type: 'session_ready', request_id: requestId(creation), conversation_id: record.id, session_id: 's1' })
+    await vi.waitFor(async () => expect((await service.snapshot()).conversations[0]?.hermesSessionId).toBe('s1'))
+    await service.sendMessage('Send the draft')
+    const turn = transport.commands.at(-1)!
+    const request = requestId(turn)
+    transport.event({ version: 2, event_id: 'e-start', kind: 'tool.started', session_id: 's1', request_id: request, summary: 'Started send_email', details: { tool: 'send_email', tool_call_id: 'tool-1' } })
+    transport.event({ version: 2, event_id: 'e-approval', kind: 'tool.needs_approval', session_id: 's1', request_id: request, summary: 'Send email to Sarah', details: { proposal_id: 'tool-1', risk: 'high' } })
+    transport.event({ version: 2, event_id: 'e-complete', kind: 'tool.completed', session_id: 's1', request_id: request, summary: 'Email sent', details: { tool: 'send_email', tool_call_id: 'tool-1' } })
+
+    await vi.waitFor(async () => {
+      const assistant = (await service.snapshot()).messages.at(-1)
+      expect(assistant?.activities.find((activity) => activity.id === 'tool-1')).toMatchObject({ label: 'send_email', status: 'completed' })
+    })
+  })
+
+  it('renders legacy approvals and verification with collision-proof activity IDs', async () => {
+    const record = await service.createConversation('/tmp/project')
+    const creation = transport.commands.at(-1)!
+    transport.event({ version: 1, type: 'session_ready', request_id: requestId(creation), conversation_id: record.id, session_id: 's1' })
+    await vi.waitFor(async () => expect((await service.snapshot()).conversations[0]?.hermesSessionId).toBe('s1'))
+    await service.sendMessage('Send it')
+    transport.event({ version: 1, type: 'permission_request', request_id: 'same-id', action: 'send_email', risk: 'high', reason: 'Send to Sarah' })
+    transport.event({ version: 1, type: 'verification_result', request_id: 'same-id', success: true, detail: 'Message sent' })
+
+    await vi.waitFor(async () => {
+      const assistant = (await service.snapshot()).messages.at(-1)
+      expect(assistant?.activities.find((activity) => activity.id === 'legacy:approval:same-id')).toMatchObject({
+        label: 'send_email',
+        approval: { proposalId: 'same-id', risk: 'high' },
+      })
+      expect(assistant?.activities.find((activity) => activity.id === 'legacy:verification:same-id')).toMatchObject({
+        label: 'Verification',
+        status: 'completed',
+      })
+      expect(assistant?.activities.find((activity) => activity.id === 'legacy:approval:same-id')?.id).not.toBe(
+        assistant?.activities.find((activity) => activity.id === 'legacy:verification:same-id')?.id,
+      )
+    })
+  })
+})
+
+function requestId(command: ClientCommand): string {
+  if (!('request_id' in command)) throw new Error(`Command ${command.type} has no request ID`)
+  return command.request_id
+}

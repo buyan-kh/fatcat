@@ -1,4 +1,11 @@
 node_modules/
+electron/node_modules/
+electron/out/
+electron/dist/
+electron/*.tsbuildinfo
 dist/
 .build/
 .DS_Store
+**/__pycache__/
+scripts/.superpowers/
+.worktrees/

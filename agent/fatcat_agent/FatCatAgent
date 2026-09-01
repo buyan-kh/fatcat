@@ -1,0 +1,18 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+AGENT_ROOT="$(cd "$(dirname "$0")" && pwd)"
+PYTHON_BIN="$AGENT_ROOT/runtime/bin/python3"
+SITE_PACKAGES="$AGENT_ROOT/venv/lib/python3.11/site-packages"
+
+if [[ ! -x "$PYTHON_BIN" ]]; then
+  echo "FatCatAgent bundled Python runtime is missing" >&2
+  exit 1
+fi
+
+export PYTHONPATH="$AGENT_ROOT${PYTHONPATH:+:$PYTHONPATH}"
+export PYTHONDONTWRITEBYTECODE=1
+if [[ -d "$SITE_PACKAGES" ]]; then
+  export PYTHONPATH="$SITE_PACKAGES:$PYTHONPATH"
+fi
+exec "$PYTHON_BIN" -m fatcat_agent.server "$@"
