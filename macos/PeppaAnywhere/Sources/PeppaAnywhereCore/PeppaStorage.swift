@@ -61,7 +61,7 @@ public enum StorageError: Error, Equatable, Sendable {
 
 public final class PeppaAuditStore: @unchecked Sendable {
     private let database: DatabaseQueue
-    private static let tableNames = ["observations", "actions", "approvals", "verification_results", "goals", "privacy_decisions", "hermes_sessions"]
+    private static let tableNames = ["observations", "actions", "approvals", "verification_results", "privacy_decisions", "hermes_sessions"]
 
     public static func inMemory() throws -> Self {
         let store = try Self(database: DatabaseQueue(path: ":memory:"), encryptionKey: nil, requireSQLCipher: false)
@@ -141,12 +141,6 @@ public final class PeppaAuditStore: @unchecked Sendable {
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 action_id TEXT NOT NULL,
                 success INTEGER NOT NULL,
-                detail TEXT NOT NULL,
-                created_at REAL NOT NULL
-            );
-            CREATE TABLE IF NOT EXISTS goals (
-                id TEXT PRIMARY KEY,
-                status TEXT NOT NULL,
                 detail TEXT NOT NULL,
                 created_at REAL NOT NULL
             );

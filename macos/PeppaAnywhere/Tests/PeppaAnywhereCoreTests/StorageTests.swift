@@ -12,6 +12,9 @@ struct StorageTests {
         #expect(try store.count(table: "observations") == 1)
         #expect(try store.count(table: "actions") == 1)
         #expect(try store.count(table: "verification_results") == 1)
+        #expect(throws: StorageError.invalidTable) {
+            try store.count(table: "goals")
+        }
     }
 
     @Test func keychainStoreNeverReturnsAnEmptyDatabaseKey() throws {
