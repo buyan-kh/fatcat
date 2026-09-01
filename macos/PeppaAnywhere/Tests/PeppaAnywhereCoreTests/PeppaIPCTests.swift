@@ -3,6 +3,27 @@ import Testing
 @testable import PeppaAnywhereCore
 
 struct PeppaIPCTests {
+    @Test func roundTripsSharedClientAndConversationEvents() throws {
+        let message = FatCatIPCMessageRecord(id: "m1", role: "user", text: "Hello")
+        let record = FatCatIPCConversationRecord(
+            id: "c1",
+            title: "First",
+            workspacePath: "/tmp",
+            sessionID: "s1",
+            messages: [message]
+        )
+        let messages: [PeppaIPCMessage] = [
+            .clientHello(client: "native_pet"),
+            .petClicked(eventID: "click-1", petID: "primary", conversationID: "c1"),
+            .conversationSnapshot(selectedID: "c1", records: [record]),
+            .messageAdded(conversationID: "c1", sessionID: "s1", message: message)
+        ]
+
+        for message in messages {
+            #expect(try PeppaIPCCodec.decodeLine(PeppaIPCCodec.encode(message: message)) == message)
+        }
+    }
+
     @Test func providerSetupMessagesRoundTripWithoutRawCredentials() throws {
         let messages: [PeppaIPCMessage] = [
             .providerInventory(requestID: "inventory-1"),

@@ -4,7 +4,9 @@ const id = z.string().min(1)
 const optionalRequestId = z.string().nullable().optional()
 const base = { version: z.literal(1) }
 
-const hello = z.object({ ...base, type: z.literal('hello') }).strict()
+const clientRole = z.enum(['native_pet', 'electron_chat'])
+const hello = z.object({ ...base, type: z.literal('hello'), client: clientRole }).strict()
+const petClickedCommand = z.object({ ...base, type: z.literal('pet_clicked'), event_id: id, pet_id: id, conversation_id: id.nullable().optional() }).strict()
 const newSession = z.object({ ...base, type: z.literal('new_session'), request_id: id, conversation_id: id, cwd: z.string().min(1) }).strict()
 const loadSession = z.object({ ...base, type: z.literal('load_session'), request_id: id, conversation_id: id, session_id: id, cwd: z.string().min(1) }).strict()
 const listSessions = z.object({ ...base, type: z.literal('list_sessions'), request_id: id, cwd: z.string().nullable() }).strict()
@@ -20,6 +22,7 @@ const shutdown = z.object({ ...base, type: z.literal('shutdown') }).strict()
 
 export const clientCommandSchema = z.discriminatedUnion('type', [
   hello,
+  petClickedCommand,
   newSession,
   loadSession,
   listSessions,
@@ -34,18 +37,29 @@ export const clientCommandSchema = z.discriminatedUnion('type', [
   shutdown,
 ])
 
-const helloAck = z.object({ ...base, type: z.literal('hello_ack'), agent_version: z.string() }).strict()
+const helloAck = z.object({ ...base, type: z.literal('hello_ack'), agent_version: z.string(), client_id: id.optional() }).strict()
+const messageRecord = z.object({ id, role: z.enum(['user', 'assistant', 'system']), text: z.string() }).strict()
+const conversationRecord = z.object({
+  id,
+  title: z.string(),
+  workspace_path: z.string(),
+  session_id: id.nullable(),
+  messages: z.array(messageRecord),
+}).strict()
+const petClicked = z.object({ ...base, type: z.literal('pet_clicked'), event_id: id, pet_id: id, conversation_id: id.nullable().optional() }).strict()
+const conversationSnapshot = z.object({ ...base, type: z.literal('conversation_snapshot'), selected_id: id.nullable(), records: z.array(conversationRecord) }).strict()
+const messageAdded = z.object({ ...base, type: z.literal('message_added'), conversation_id: id, session_id: id, message: messageRecord }).strict()
 const sessionReady = z.object({ ...base, type: z.literal('session_ready'), request_id: id, conversation_id: id, session_id: id }).strict()
 const sessionLoaded = z.object({ ...base, type: z.literal('session_loaded'), request_id: id, conversation_id: id, session_id: id }).strict()
 const sessionLoadFailed = z.object({ ...base, type: z.literal('session_load_failed'), request_id: id, conversation_id: id, session_id: id, message: z.string() }).strict()
 const sessionHistory = z.object({ ...base, type: z.literal('session_history'), conversation_id: id, session_id: id, role: z.enum(['user', 'assistant', 'system']), text: z.string() }).strict()
 const sessionList = z.object({ ...base, type: z.literal('session_list'), request_id: id, sessions: z.array(z.record(z.string(), z.string())) }).strict()
-const assistantDelta = z.object({ ...base, type: z.literal('assistant_delta'), request_id: id, session_id: id, text: z.string() }).strict()
+const assistantDelta = z.object({ ...base, type: z.literal('assistant_delta'), request_id: id, session_id: id, conversation_id: id.optional(), text: z.string() }).strict()
 const plan = z.object({ ...base, type: z.literal('plan'), request_id: optionalRequestId, session_id: id, steps: z.array(z.string()) }).strict()
 const toolCall = z.object({ ...base, type: z.literal('tool_call'), request_id: id, name: z.string(), arguments: z.record(z.string(), z.string()) }).strict()
 const actionResult = z.object({ ...base, type: z.literal('action_result'), request_id: id, success: z.boolean(), detail: z.string() }).strict()
 const verificationResult = z.object({ ...base, type: z.literal('verification_result'), request_id: id, success: z.boolean(), detail: z.string() }).strict()
-const state = z.object({ ...base, type: z.literal('state'), state: z.enum(['connecting', 'ready', 'sending', 'idle', 'listening', 'thinking', 'streaming', 'stopping', 'completed', 'working', 'waiting_for_approval', 'verifying', 'failed', 'disconnected', 'error']), session_id: id.optional(), request_id: optionalRequestId }).strict()
+const state = z.object({ ...base, type: z.literal('state'), state: z.enum(['connecting', 'ready', 'sending', 'idle', 'listening', 'thinking', 'streaming', 'stopping', 'completed', 'working', 'waiting_for_approval', 'verifying', 'failed', 'disconnected', 'error']), conversation_id: id.optional(), session_id: id.optional(), request_id: optionalRequestId }).strict()
 const permissionRequest = z.object({ ...base, type: z.enum(['permission_request', 'proposed_action']), request_id: id, action: z.string(), risk: z.string(), reason: z.string() }).strict()
 const providerStatus = z.object({ ...base, type: z.literal('provider_status'), provider_id: id, authenticated: z.boolean(), detail: z.string() }).strict()
 const providerDescriptor = z.record(z.string(), z.string())
@@ -59,6 +73,9 @@ const shutdownAck = z.object({ ...base, type: z.literal('shutdown_ack') }).stric
 
 export const agentEventSchema = z.discriminatedUnion('type', [
   helloAck,
+  petClicked,
+  conversationSnapshot,
+  messageAdded,
   sessionReady,
   sessionLoaded,
   sessionLoadFailed,

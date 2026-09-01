@@ -416,7 +416,7 @@ final class PeppaAgentClient: ObservableObject {
             for _ in 0..<50 {
                 if Task.isCancelled { return }
                 if connectSocket() {
-                    try? write(.hello)
+                    try? write(.clientHello(client: "native_pet"))
                     status = "Connected"
                     return
                 }
@@ -1805,7 +1805,7 @@ final class PetWindowController: NSObject, NSWindowDelegate {
             guard conversationID == model.selectedConversationID else { return }
             if role == "user" { model.appendUser(text) }
             else if role == "assistant" { let requestID = UUID().uuidString; model.beginAssistant(requestID: requestID); model.appendAssistant(text, requestID: requestID); model.completeAssistant(requestID: requestID) }
-        case .newSession, .loadSession, .listSessions, .sessionList, .cancel, .hello, .helloAck, .userMessage, .observation, .shutdown, .shutdownAck,
+        case .newSession, .loadSession, .listSessions, .sessionList, .cancel, .hello, .clientHello, .helloAck, .petClicked, .conversationSnapshot, .messageAdded, .userMessage, .observation, .shutdown, .shutdownAck,
              .providerInventory, .providerModels, .providerSetDefault, .providerSetCredentialRef, .providerSetBaseURL, .providerValidate:
             break
         }

@@ -43,7 +43,7 @@ export class SocketTransport extends EventEmitter {
       const socket = createConnection(this.socketPath)
       this.socket = socket
       socket.setEncoding('utf8')
-      socket.on('connect', () => socket.write(encodeClientCommand({ version: 1, type: 'hello' })))
+      socket.on('connect', () => socket.write(encodeClientCommand({ version: 1, type: 'hello', client: 'electron_chat' })))
       socket.on('data', (chunk: string) => this.consume(chunk, () => finish()))
       socket.on('error', (error) => {
         this.emit('status', { phase: 'offline', detail: error.message })

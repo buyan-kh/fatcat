@@ -8,8 +8,13 @@
   "properties": {
     "version": { "const": 1 },
     "type": {
-      "enum": ["hello", "hello_ack", "new_session", "load_session", "list_sessions", "session_ready", "session_loaded", "session_load_failed", "session_history", "session_list", "user_message", "cancel", "observation", "plan", "tool_call", "provider_status", "assistant_delta", "state", "proposed_action", "permission_request", "action_result", "verification_result", "memory_update", "error", "shutdown", "shutdown_ack"]
+      "enum": ["hello", "hello_ack", "pet_clicked", "conversation_snapshot", "message_added", "new_session", "load_session", "list_sessions", "session_ready", "session_loaded", "session_load_failed", "session_history", "session_list", "user_message", "cancel", "observation", "plan", "tool_call", "provider_status", "assistant_delta", "state", "proposed_action", "permission_request", "action_result", "verification_result", "memory_update", "error", "shutdown", "shutdown_ack"]
     },
+    "client": { "enum": ["native_pet", "electron_chat"] },
+    "client_id": { "type": "string" },
+    "event_id": { "type": "string" },
+    "pet_id": { "type": "string" },
+    "selected_id": { "type": ["string", "null"] },
     "request_id": { "type": ["string", "null"] },
     "session_id": { "type": ["string", "null"] },
     "conversation_id": { "type": ["string", "null"] },
@@ -34,6 +39,8 @@
     "detail": { "type": "string" }
     ,"role": { "type": "string" }
     ,"sessions": { "type": "array", "items": { "type": "object", "additionalProperties": { "type": "string" } } }
+    ,"records": { "type": "array", "items": { "type": "object" } }
+    ,"message": { "type": ["string", "object"] }
   },
   "additionalProperties": false
 }

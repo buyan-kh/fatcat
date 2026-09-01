@@ -3,7 +3,21 @@ import { decodeAgentEvent, encodeClientCommand } from './protocol'
 
 describe('FatCat socket protocol', () => {
   it.each([
-    { version: 1, type: 'hello_ack', agent_version: '1.0' },
+    { version: 1, type: 'hello_ack', agent_version: '1.0', client_id: 'client-1' },
+    { version: 1, type: 'pet_clicked', event_id: 'click-1', pet_id: 'primary', conversation_id: 'c1' },
+    {
+      version: 1,
+      type: 'conversation_snapshot',
+      selected_id: 'c1',
+      records: [{ id: 'c1', title: 'First', workspace_path: '/tmp', session_id: 's1', messages: [] }],
+    },
+    {
+      version: 1,
+      type: 'message_added',
+      conversation_id: 'c1',
+      session_id: 's1',
+      message: { id: 'm1', role: 'user', text: 'Hello' },
+    },
     { version: 1, type: 'session_ready', request_id: 'r1', conversation_id: 'c1', session_id: 's1' },
     { version: 1, type: 'session_loaded', request_id: 'r1', conversation_id: 'c1', session_id: 's1' },
     { version: 1, type: 'session_history', conversation_id: 'c1', session_id: 's1', role: 'assistant', text: 'Hello' },
@@ -54,5 +68,14 @@ describe('FatCat socket protocol', () => {
     expect(
       encodeClientCommand({ version: 1, type: 'user_message', request_id: 'r1', session_id: 's1', text: 'Hello' }),
     ).toBe('{"version":1,"type":"user_message","request_id":"r1","session_id":"s1","text":"Hello"}\n')
+  })
+
+  it('identifies clients and encodes typed pet clicks', () => {
+    expect(encodeClientCommand({ version: 1, type: 'hello', client: 'electron_chat' })).toBe(
+      '{"version":1,"type":"hello","client":"electron_chat"}\n',
+    )
+    expect(
+      encodeClientCommand({ version: 1, type: 'pet_clicked', event_id: 'click-1', pet_id: 'primary', conversation_id: 'c1' }),
+    ).toContain('"type":"pet_clicked"')
   })
 })
