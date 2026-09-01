@@ -19,19 +19,17 @@ class ConversationStoreTests(unittest.TestCase):
                 store.attach_session("conversation-1", "session-2")
             self.assertEqual(store.snapshot()["records"][0]["session_id"], "session-1")
 
-    def test_reopen_preserves_selection_session_and_messages(self):
+    def test_reopen_preserves_selection_and_session_without_history(self):
         with tempfile.TemporaryDirectory() as root:
             path = Path(root) / "conversations.json"
             store = ConversationStore(path)
             store.create("conversation-1", "First", root)
             store.attach_session("conversation-1", "session-1")
-            store.append_message("conversation-1", "message-1", "user", "Hello")
-
             reopened = ConversationStore(path).snapshot()
 
             self.assertEqual(reopened["selected_id"], "conversation-1")
             self.assertEqual(reopened["records"][0]["session_id"], "session-1")
-            self.assertEqual(reopened["records"][0]["messages"][0]["text"], "Hello")
+            self.assertNotIn("messages", reopened["records"][0])
 
     def test_reconnect_lookup_never_creates_a_conversation(self):
         with tempfile.TemporaryDirectory() as root:
@@ -63,7 +61,6 @@ class ConversationStoreTests(unittest.TestCase):
                     "title": "Existing chat",
                     "workspace_path": root,
                     "session_id": "session-1",
-                    "messages": [],
                 }],
             })
             persisted = json.loads(path.read_text(encoding="utf-8"))
@@ -107,23 +104,17 @@ class ConversationStoreTests(unittest.TestCase):
             self.assertEqual(first["records"][0]["session_id"], "session-1")
             self.assertEqual(second, {"selected_id": None, "records": []})
 
-    def test_history_merge_completes_partial_records_without_duplicates(self):
+    def test_legacy_transcript_payload_is_discarded(self):
         with tempfile.TemporaryDirectory() as root:
-            store = ConversationStore(Path(root) / "conversations.json")
-            store.create("c1", "First", root)
-            store.append_message("c1", "live-1", "user", "new question")
-            history = [
-                {"role": "user", "content": "old question"},
-                {"role": "assistant", "content": "old answer"},
-                {"role": "user", "content": "new question"},
-            ]
+            path = Path(root) / "conversations.json"
+            path.write_text(json.dumps({"selected_id": "c1", "records": [{
+                "id": "c1", "title": "First", "workspace_path": root,
+                "session_id": "s1", "messages": [{"role": "user", "text": "old"}],
+            }]}), encoding="utf-8")
 
-            store.merge_history("c1", "s1", history)
-            store.merge_history("c1", "s1", history)
+            snapshot = ConversationStore(path).snapshot()
 
-            messages = store.get("c1")["messages"]
-            self.assertEqual([item["text"] for item in messages], ["old question", "old answer", "new question"])
-            self.assertEqual(messages[-1]["id"], "live-1")
+            self.assertNotIn("messages", snapshot["records"][0])
 
 
 if __name__ == "__main__":

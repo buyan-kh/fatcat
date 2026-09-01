@@ -33,6 +33,20 @@ def _event(event_type: str, **fields: Any) -> dict[str, Any]:
     return {"version": 1, "type": event_type, **fields}
 
 
+def _hermes_event(kind: str, session_id: str, request_id: str | None, summary: str, details: dict[str, Any] | None = None) -> dict[str, Any]:
+    safe_details = details or {}
+    _reject_credentials(safe_details)
+    return {
+        "version": 2,
+        "event_id": str(uuid.uuid4()),
+        "kind": kind,
+        "session_id": session_id,
+        "request_id": request_id,
+        "summary": summary,
+        "details": safe_details,
+    }
+
+
 class PeppaAgentSession:
     def __init__(
         self,
@@ -59,7 +73,13 @@ class PeppaAgentSession:
             self.agent.tool_complete_callback = self._tool_completed
 
     def _state_event(self, state: str, request_id: str | None = None) -> dict[str, Any]:
-        return _event("state", state=state, session_id=self.session_id, request_id=request_id)
+        return _hermes_event(
+            "session.state",
+            self.session_id,
+            request_id,
+            state.replace("_", " ").title(),
+            {"state": state},
+        )
 
     async def prompt(self, request_id: str, text: str) -> None:
         # Hermes ACP serializes turns for a session. Keep that invariant at the
@@ -133,16 +153,16 @@ execute OS mutations directly or bypass that handshake.
             for key, value in arguments.items()
         }
         _reject_credentials(safe_arguments)
-        self.emit_sync(_event("tool_call", request_id=tool_call_id, name=name, arguments=safe_arguments))
+        self.emit_sync(_hermes_event("tool.started", self.session_id, tool_call_id, f"Started {name}", {"tool": name, **safe_arguments}))
 
     def _tool_completed(self, tool_call_id: str, name: str, arguments: dict[str, Any], result: Any) -> None:
-        self.emit_sync(_event("action_result", request_id=tool_call_id, success=True, detail=f"Tool {name} completed."))
+        self.emit_sync(_hermes_event("tool.completed", self.session_id, tool_call_id, f"Completed {name}", {"tool": name, "success": True}))
 
     def _run(self, request_id: str, text: str) -> bool:
         def stream_delta(delta: str) -> None:
             if delta:
                 self.emit_sync(self._state_event("streaming", request_id))
-                self.emit_sync(_event("assistant_delta", request_id=request_id, session_id=self.session_id, text=delta))
+                self.emit_sync(_hermes_event("message.delta", self.session_id, request_id, delta, {"text": delta}))
 
         self.emit_sync(self._state_event("working", request_id))
         try:
@@ -199,12 +219,12 @@ class _FatCatACPBridge:
             text = getattr(getattr(update, "content", None), "text", None)
             if text:
                 await session.emit(session._state_event("streaming", request_id))
-                await session.emit(_event("assistant_delta", request_id=request_id, session_id=session_id, text=text))
+                await session.emit(_hermes_event("message.delta", session_id, request_id, text, {"text": text}))
         elif kind == "agent_thought_chunk":
-            await session.emit(session._state_event("thinking", request_id))
+            await session.emit(_hermes_event("session.state", session_id, request_id, "Thinking", {"state": "thinking"}))
         elif kind == "plan":
             steps = [str(getattr(entry, "content", "")) for entry in (getattr(update, "entries", None) or [])]
-            await session.emit(_event("plan", request_id=request_id, session_id=session_id, steps=steps))
+            await session.emit(_hermes_event("session.state", session_id, request_id, "Plan available", {"steps": steps}))
         elif kind == "tool_call":
             arguments = getattr(update, "raw_input", None)
             if not isinstance(arguments, dict):
@@ -214,31 +234,30 @@ class _FatCatACPBridge:
                 for key, value in arguments.items()
             }
             _reject_credentials(safe_arguments)
-            await session.emit(_event(
-                "tool_call",
-                request_id=str(getattr(update, "tool_call_id", request_id)),
-                name=str(getattr(update, "title", "tool")),
-                arguments=safe_arguments,
-            ))
+            tool_id = str(getattr(update, "tool_call_id", request_id))
+            name = str(getattr(update, "title", "tool"))
+            await session.emit(_hermes_event("tool.started", session_id, tool_id, f"Started {name}", {"tool": name, **safe_arguments}))
         elif kind == "tool_call_update":
             status = str(getattr(getattr(update, "status", None), "value", getattr(update, "status", "")))
             if status in {"completed", "failed"}:
-                await session.emit(_event(
-                    "action_result",
-                    request_id=str(getattr(update, "tool_call_id", request_id)),
-                    success=status == "completed",
-                    detail=f"Tool call {status}.",
+                tool_id = str(getattr(update, "tool_call_id", request_id))
+                await session.emit(_hermes_event(
+                    "tool.completed" if status == "completed" else "tool.failed",
+                    session_id,
+                    tool_id,
+                    f"Tool call {status}.",
+                    {"status": status},
                 ))
 
     async def request_permission(self, options: list[Any], session_id: str, tool_call: Any, **kwargs: Any) -> Any:
         session = self.server.sessions.get(session_id)
         if session is not None:
-            await session.emit(_event(
-                "permission_request",
-                request_id=str(getattr(tool_call, "tool_call_id", session.current_request_id or uuid.uuid4())),
-                action=str(getattr(tool_call, "title", "native action")),
-                risk="high",
-                reason="FatCat Agent requested a native action approval.",
+            await session.emit(_hermes_event(
+                "tool.needs_approval",
+                session_id,
+                str(getattr(tool_call, "tool_call_id", session.current_request_id or uuid.uuid4())),
+                str(getattr(tool_call, "title", "native action")),
+                {"risk": "high", "reason": "FatCat Agent requested a native action approval."},
             ))
         from acp.schema import DeniedOutcome, RequestPermissionResponse
 
@@ -363,13 +382,6 @@ class PeppaAgentServer:
         conversation_id = self.session_conversations.get(str(session_id or ""))
         if conversation_id:
             event.setdefault("conversation_id", conversation_id)
-            if event.get("type") == "assistant_delta":
-                request_id = str(event.get("request_id") or uuid.uuid4())
-                self.conversation_store.append_assistant_delta(
-                    conversation_id,
-                    f"assistant-{request_id}",
-                    str(event.get("text") or ""),
-                )
         payload = (json.dumps(event, separators=(",", ":")) + "\n").encode()
         stale: list[str] = []
         for client_id, writer in list(self.clients.items()):
@@ -467,7 +479,6 @@ class PeppaAgentServer:
             self.sessions[session_id] = PeppaAgentSession(
                 session_id, cwd, self.broadcast, self.loop or asyncio.get_running_loop(), state, manager, self.acp_agent
             )
-            self.conversation_store.merge_history(conversation_id, session_id, state.history)
             await self.broadcast(_event("conversation_snapshot", **self.conversation_store.snapshot()))
             return _event("session_loaded", request_id=request_id, conversation_id=conversation_id, session_id=session_id)
         if message_type == "list_sessions":
@@ -554,7 +565,6 @@ class PeppaAgentServer:
             )
             self.sessions[session_id] = session
         self.session_conversations[session_id] = conversation_id
-        self.conversation_store.append_message(conversation_id, request_id, "user", str(message.get("text") or ""))
         await self.broadcast(_event(
             "message_added",
             conversation_id=conversation_id,

@@ -36,22 +36,18 @@ class ServerTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(events, [])
 
-    async def test_streamed_reply_persists_separately_from_its_user_request(self):
+    async def test_streamed_reply_is_broadcast_without_transcript_persistence(self):
         with tempfile.TemporaryDirectory() as root:
             server = PeppaAgentServer(Path(root) / "agent.sock", Path(root) / "Hermes")
             server.conversation_store.create("c1", "First", root)
             server.conversation_store.attach_session("c1", "s1")
             server.session_conversations["s1"] = "c1"
-            server.conversation_store.append_message("c1", "r1", "user", "hello")
 
-            await server.broadcast({"version": 1, "type": "assistant_delta", "request_id": "r1", "session_id": "s1", "text": "Hi"})
-            await server.broadcast({"version": 1, "type": "assistant_delta", "request_id": "r1", "session_id": "s1", "text": " there"})
+            await server.broadcast({"version": 2, "event_id": "e1", "kind": "message.delta", "request_id": "r1", "session_id": "s1", "summary": "Hi", "details": {"text": "Hi"}})
+            await server.broadcast({"version": 2, "event_id": "e2", "kind": "message.delta", "request_id": "r1", "session_id": "s1", "summary": "Hi there", "details": {"text": " there"}})
 
             reopened = server.conversation_store.__class__(server.conversation_store.path).get("c1")
-            self.assertEqual(reopened["messages"], [
-                {"id": "r1", "role": "user", "text": "hello"},
-                {"id": "assistant-r1", "role": "assistant", "text": "Hi there"},
-            ])
+            self.assertNotIn("messages", reopened)
 
     async def test_live_agent_socket_is_never_replaced_but_stale_socket_is_recovered(self):
         with tempfile.TemporaryDirectory() as root:
@@ -196,14 +192,14 @@ class ServerTests(unittest.IsolatedAsyncioTestCase):
         session = MissingProviderAgentSession("session-1", ".", emit, asyncio.get_running_loop())
         await session.prompt("request-1", "hello")
 
-        self.assertEqual(events[0]["type"], "state")
-        self.assertEqual(events[0]["state"], "sending")
+        self.assertEqual(events[0]["kind"], "session.state")
+        self.assertEqual(events[0]["details"]["state"], "sending")
         self.assertEqual(events[0]["session_id"], "session-1")
         self.assertEqual(events[1]["type"], "error")
         self.assertEqual(events[1]["request_id"], "request-1")
         self.assertIn("No LLM provider configured", events[1]["message"])
-        self.assertEqual(events[2]["type"], "state")
-        self.assertEqual(events[2]["state"], "failed")
+        self.assertEqual(events[2]["kind"], "session.state")
+        self.assertEqual(events[2]["details"]["state"], "failed")
 
     async def test_unknown_user_message_does_not_create_a_replacement_session(self):
         class FakeManager:
@@ -247,7 +243,7 @@ class ServerTests(unittest.IsolatedAsyncioTestCase):
 
             self.assertEqual(response["type"], "state")
             self.assertEqual(server.session_conversations, {"s1": "c1"})
-            self.assertEqual(server.conversation_store.get("c1")["messages"][0]["text"], "hello")
+            self.assertNotIn("messages", server.conversation_store.get("c1"))
             await asyncio.sleep(0)
 
     async def test_legacy_v1_turn_resolves_conversation_from_session(self):
@@ -268,7 +264,7 @@ class ServerTests(unittest.IsolatedAsyncioTestCase):
             )
 
             self.assertEqual(response["type"], "state")
-            self.assertEqual(server.conversation_store.get("c1")["messages"][0]["text"], "hello")
+            self.assertNotIn("messages", server.conversation_store.get("c1"))
             await asyncio.sleep(0)
 
     async def test_turn_rejects_a_session_owned_by_another_conversation(self):
@@ -345,7 +341,7 @@ class ServerTests(unittest.IsolatedAsyncioTestCase):
             await server.handle_message(message, lambda event: None)
             await server.handle_message(message, lambda event: None)
 
-            self.assertEqual([item["text"] for item in server.conversation_store.get("c1")["messages"]], ["hello", "hi"])
+            self.assertNotIn("messages", server.conversation_store.get("c1"))
 
     async def test_prompts_for_one_session_are_serialized(self):
         class SerialAgent:
@@ -391,8 +387,8 @@ class ServerTests(unittest.IsolatedAsyncioTestCase):
         state.cancel_event.set()
         await prompt_task
 
-        self.assertEqual(events[-1]["type"], "state")
-        self.assertEqual(events[-1]["state"], "failed")
+        self.assertEqual(events[-1]["kind"], "session.state")
+        self.assertEqual(events[-1]["details"]["state"], "failed")
         self.assertEqual(events[-1]["session_id"], "session-1")
 
     async def test_prompt_uses_the_supported_acp_prompt_method_when_available(self):

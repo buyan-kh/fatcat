@@ -70,7 +70,6 @@ class ConversationStore:
                 "title": title.strip() or "New chat",
                 "workspace_path": str(Path(workspace_path).expanduser()),
                 "session_id": None,
-                "messages": [],
             }
             self._document["records"].append(record)
             self._document["selected_id"] = conversation_id
@@ -118,57 +117,6 @@ class ConversationStore:
             record["session_id"] = session_id
             self._save()
 
-    def append_message(self, conversation_id: str, message_id: str, role: str, text: str) -> dict:
-        if role not in {"user", "assistant", "system"}:
-            raise ValueError(f"unsupported message role: {role}")
-        with self._lock:
-            record = self._required(conversation_id)
-            existing = next((item for item in record["messages"] if item["id"] == message_id), None)
-            if existing:
-                return deepcopy(existing)
-            message = {"id": message_id, "role": role, "text": text}
-            record["messages"].append(message)
-            self._save()
-            return deepcopy(message)
-
-    def append_assistant_delta(self, conversation_id: str, message_id: str, text: str) -> dict:
-        with self._lock:
-            record = self._required(conversation_id)
-            message = next((item for item in record["messages"] if item["id"] == message_id), None)
-            if message is None:
-                message = {"id": message_id, "role": "assistant", "text": ""}
-                record["messages"].append(message)
-            message["text"] += text
-            self._save()
-            return deepcopy(message)
-
-    def merge_history(self, conversation_id: str, session_id: str, history: list[dict]) -> None:
-        with self._lock:
-            record = self._required(conversation_id)
-            existing = record["messages"]
-            used: set[int] = set()
-            cursor = 0
-            merged = []
-            for history_index, item in enumerate(history):
-                role = item.get("role")
-                text = item.get("content")
-                if role not in {"user", "assistant"} or not isinstance(text, str) or not text:
-                    continue
-                match = next((
-                    index for index in range(cursor, len(existing))
-                    if index not in used and existing[index]["role"] == role and existing[index]["text"] == text
-                ), None)
-                if match is None:
-                    merged.append({"id": f"history-{session_id}-{history_index}", "role": role, "text": text})
-                else:
-                    merged.append(deepcopy(existing[match]))
-                    used.add(match)
-                    cursor = match + 1
-            merged.extend(deepcopy(item) for index, item in enumerate(existing) if index not in used)
-            if merged != existing:
-                record["messages"] = merged
-                self._save()
-
     def _load(self) -> tuple[dict, bool]:
         return self._load_path(self.path)
 
@@ -206,24 +154,11 @@ class ConversationStore:
             title = raw.get("title") if isinstance(raw.get("title"), str) else "New chat"
             workspace = raw.get("workspace_path") or raw.get("workspacePath") or str(Path.home())
             session_id = raw.get("session_id") or raw.get("hermesSessionID") or raw.get("hermesSessionId")
-            messages = []
-            for index, message in enumerate(raw.get("messages") if isinstance(raw.get("messages"), list) else []):
-                if not isinstance(message, dict):
-                    continue
-                role = message.get("role")
-                text = message.get("text")
-                if role not in {"user", "assistant", "system"} or not isinstance(text, str):
-                    continue
-                message_id = message.get("id")
-                if not isinstance(message_id, str) or not message_id.strip():
-                    message_id = f"legacy-{conversation_id}-{index}"
-                messages.append({"id": message_id, "role": role, "text": text})
             records.append({
                 "id": conversation_id,
                 "title": title.strip() or "New chat",
                 "workspace_path": str(workspace),
                 "session_id": session_id if isinstance(session_id, str) and session_id.strip() else None,
-                "messages": messages,
             })
         selected_id = value.get("selected_id") or value.get("selectedID") or value.get("selectedId")
         if not isinstance(selected_id, str) or not any(record["id"] == selected_id for record in records):
