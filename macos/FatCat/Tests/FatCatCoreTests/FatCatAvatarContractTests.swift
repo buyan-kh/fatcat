@@ -132,6 +132,7 @@ struct FatCatAvatarContractTests {
         let launcher = try loadText("macos/FatCat/Sources/FatCatCore/FatCatElectronLauncher.swift")
         let runScript = try loadText("scripts/run-fatcat-macos.sh")
         let dmgScript = try loadText("scripts/package-fatcat-dmg.sh")
+        let electronPackageScript = try loadText("scripts/package-fatcat-electron.sh")
 
         #expect(appMain.contains("FATCAT_ELECTRON_APP_PATH"))
         #expect(launcher.contains("FatCat Electron.app"))
@@ -139,10 +140,17 @@ struct FatCatAvatarContractTests {
         #expect(appMain.contains("onDoubleClick: { [weak self] in self?.openOrFocusElectron() }"))
         #expect(appMain.contains("openElectronWorkspaceFromMenu"))
         #expect(appMain.contains("private let electronLauncher = FatCatElectronWorkspaceLauncher()"))
+        #expect(appMain.contains("configuration.createsNewApplicationInstance = true"))
         #expect(!appMain.contains("/Users/"))
         #expect(!appMain.contains("pkill"))
         #expect(runScript.contains("package-fatcat-electron.sh"))
         #expect(dmgScript.contains("FatCat Electron.app"))
+        #expect(electronPackageScript.contains("com.fatcat.electron"))
+    }
+
+    @Test func packagedElectronMainBundlesItsRuntimeDependencies() throws {
+        let viteConfig = try loadText("electron/electron.vite.config.ts")
+        #expect(viteConfig.contains("externalizeDepsPlugin({ exclude: ['zod'] })"))
     }
 
     private func loadJSON(_ relativePath: String) throws -> [String: Any] {

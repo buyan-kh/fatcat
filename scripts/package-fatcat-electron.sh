@@ -18,6 +18,12 @@ if [[ -e "$APP_BUNDLE" ]]; then
   mv "$APP_BUNDLE" "$APP_BUNDLE.previous.$$.bundle"
 fi
 cp -R "$RUNTIME_APP" "$APP_BUNDLE"
+# Give the bundled workspace its own LaunchServices identity. The stock
+# runtime is com.github.Electron; retaining that ID lets macOS route a native
+# double-click to a stale Electron registration instead of this workspace.
+/usr/libexec/PlistBuddy -c "Set :CFBundleIdentifier com.fatcat.electron" "$APP_BUNDLE/Contents/Info.plist"
+/usr/libexec/PlistBuddy -c "Set :CFBundleName FatCat Electron" "$APP_BUNDLE/Contents/Info.plist"
+/usr/libexec/PlistBuddy -c "Set :CFBundleDisplayName FatCat Electron" "$APP_BUNDLE/Contents/Info.plist"
 mkdir -p "$APP_RESOURCES/app"
 cp "$ELECTRON_ROOT/package.json" "$APP_RESOURCES/app/package.json"
 cp -R "$ELECTRON_ROOT/out" "$APP_RESOURCES/app/"

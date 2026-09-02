@@ -7,7 +7,10 @@ const source = path.resolve('src')
 
 export default defineConfig({
   main: {
-    plugins: [externalizeDepsPlugin()],
+    // The packaged app contains only the built output. Keep zod in the main
+    // bundle so a copied Electron runtime does not fail before its window is
+    // created looking for node_modules that are not shipped.
+    plugins: [externalizeDepsPlugin({ exclude: ['zod'] })],
     resolve: { alias: { '@main': path.join(source, 'main'), '@shared': path.join(source, 'shared') } },
   },
   preload: {

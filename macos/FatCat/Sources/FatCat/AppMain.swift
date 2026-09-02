@@ -1836,6 +1836,11 @@ final class FatCatElectronWorkspaceLauncher {
             }
             let configuration = NSWorkspace.OpenConfiguration()
             configuration.activates = true
+            // LaunchServices may retain a previous Electron runtime instance
+            // for a copied bundle. We already focus matching running apps
+            // above; forcing a new instance here guarantees a cold launch
+            // creates the workspace window instead of returning silently.
+            configuration.createsNewApplicationInstance = true
             workspace.openApplication(at: appURL, configuration: configuration) { [weak self] app, error in
                 DispatchQueue.main.async {
                     if let error {
