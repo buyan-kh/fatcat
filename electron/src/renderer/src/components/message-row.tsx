@@ -30,13 +30,7 @@ export function MessageRow({ message, onCopy, onRetry, onApprove = () => undefin
         ) : (
           <div className="fatcat-markdown text-[13px] leading-6">
             {message.isStreaming ? (
-              <div className="streaming-response" aria-label="Streaming response">
-                <div className="streaming-response-status" aria-hidden="true">
-                  <span className="streaming-live-dot" />
-                  <span className="streaming-response-label">{message.text ? 'Writing' : 'Waiting for response'}</span>
-                </div>
-                {message.text ? <StreamingText text={message.text} isStreaming /> : <span className="streaming-placeholder">The first words are on their way…</span>}
-              </div>
+              message.text ? <StreamingText text={message.text} isStreaming /> : <span className="streaming-placeholder" aria-label="Streaming response">Waiting for response<span className="streaming-cursor" aria-hidden="true" /></span>
             ) : message.text ? (
               <ReactMarkdown
                 remarkPlugins={[remarkGfm]}

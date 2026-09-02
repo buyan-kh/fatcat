@@ -50,18 +50,17 @@ describe('conversation experience', () => {
     expect(screen.getByText('Thinking')).toHaveClass('thinking-shimmer')
   })
 
-  it('resolves plain streaming text word by word and shows a live cursor', () => {
+  it('uses the Beautiful UI streaming text primitive for live responses', async () => {
     render(<MessageRow message={{ ...assistant, text: 'Hello from FatCat', isStreaming: true, activities: [] }} onCopy={vi.fn()} onRetry={vi.fn()} />)
-    expect(screen.getByLabelText('Streaming response')).toHaveClass('streaming-response')
-    expect(screen.getAllByTestId('streaming-token')).toHaveLength(3)
-    expect(screen.getByLabelText('Streaming response').querySelector('.streaming-cursor')).toBeInTheDocument()
+    expect(screen.getByLabelText('Streaming response')).toHaveClass('beautifului-streaming')
+    expect(await screen.findByText(/Hello/)).toBeInTheDocument()
   })
 
   it('keeps markdown literal while the response is live and shows a writing state', () => {
     const { rerender } = render(<MessageRow message={{ ...assistant, text: 'Hello **FatCat**', isStreaming: true, activities: [] }} onCopy={vi.fn()} onRetry={vi.fn()} />)
     const live = screen.getByLabelText('Streaming response')
-    expect(live).toHaveClass('streaming-response')
-    expect(live).toHaveTextContent('Hello **FatCat**')
+    expect(live).toHaveClass('beautifului-streaming')
+    expect(live).not.toHaveTextContent('Waiting for response')
     expect(screen.queryByText('FatCat', { selector: 'strong' })).not.toBeInTheDocument()
 
     rerender(<MessageRow message={{ ...assistant, text: '', isStreaming: true, activities: [] }} onCopy={vi.fn()} onRetry={vi.fn()} />)

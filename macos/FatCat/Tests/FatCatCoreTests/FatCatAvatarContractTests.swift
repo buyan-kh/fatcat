@@ -117,6 +117,12 @@ struct FatCatAvatarContractTests {
         #expect(appMain.contains("bypassIdleAndCooldown: explicit"))
     }
 
+    @Test func settingsExposeWhenFatCatIsFlying() throws {
+        let appMain = try loadText("macos/FatCat/Sources/FatCat/AppMain.swift")
+        #expect(appMain.contains("flightStatusText(for: model.flightDiagnostics)"))
+        #expect(appMain.contains("Flying now"))
+    }
+
     @Test func restoredPanelPositionUsesTheSavedDisplayInsteadOfTheCurrentMouseDisplay() throws {
         let appMain = try loadText("macos/FatCat/Sources/FatCat/AppMain.swift")
         let showStart = try #require(appMain.range(of: "    func show() {"))

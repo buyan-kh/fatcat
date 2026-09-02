@@ -48,6 +48,18 @@ describe('ConversationRepository', () => {
     expect((await repository.snapshot()).records[0]!.title).toBe('Chat')
   })
 
+  it('allows two Electron clients to persist the shared cache concurrently', async () => {
+    const first = await ConversationRepository.open(filePath)
+    const second = await ConversationRepository.open(filePath)
+
+    await expect(Promise.all([
+      first.create('First client', '/tmp/first'),
+      second.create('Second client', '/tmp/second'),
+    ])).resolves.toHaveLength(2)
+    expect((await readFile(filePath, 'utf8')).trim()).not.toBe('')
+    expect((await readdir(root)).some((name) => name.endsWith('.tmp'))).toBe(false)
+  })
+
   it('quarantines corrupt data and starts empty', async () => {
     await writeFile(filePath, '{broken')
     const repository = await ConversationRepository.open(filePath)

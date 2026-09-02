@@ -156,7 +156,10 @@ function requireRecord(document: ConversationSnapshot, id: string): Conversation
 }
 
 async function atomicWrite(filePath: string, contents: string): Promise<void> {
-  const temporaryPath = `${filePath}.tmp`
+  // Native and Electron clients can persist the same metadata cache at once.
+  // A shared `.tmp` name lets one writer rename the other writer's file out
+  // from under it, producing ENOENT and leaving the UI with stale state.
+  const temporaryPath = `${filePath}.${process.pid}.${randomUUID()}.tmp`
   const handle = await openFile(temporaryPath, 'w')
   try {
     await handle.writeFile(contents, 'utf8')

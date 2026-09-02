@@ -1,21 +1,19 @@
-import { Fragment, useMemo } from 'react'
+import BeautifulStreamingText from '../../../components/primitives/StreamingText'
 
 type StreamingTextProps = {
   text: string
-  isStreaming: boolean
+  isStreaming?: boolean
 }
 
-/** Renders real Hermes deltas with a subtle word-level resolve animation. */
-export function StreamingText({ text, isStreaming }: StreamingTextProps) {
-  const tokens = useMemo(() => text.match(/\S+\s*/g) ?? [], [text])
+function tokensFor(text: string) {
+  return text.split(/\s+/).filter(Boolean).map((token) => ({ text: token }))
+}
+
+/** Adapts the registry primitive to real Hermes delta text. */
+export function StreamingText({ text }: StreamingTextProps) {
   return (
-    <span className="streaming-response-copy whitespace-pre-wrap">
-      {tokens.map((token, index) => (
-        <Fragment key={`${index}-${token}`}>
-          <span data-testid="streaming-token" data-streaming-token={isStreaming ? '' : undefined} className={isStreaming ? 'streaming-token' : undefined}>{token}</span>
-        </Fragment>
-      ))}
-      {isStreaming && <span className="streaming-cursor" aria-hidden />}
-    </span>
+    <div className="beautifului-streaming" aria-label="Streaming response">
+      <BeautifulStreamingText content={tokensFor(text)} sources={[]} followUps={[]} loop={false} fill />
+    </div>
   )
 }

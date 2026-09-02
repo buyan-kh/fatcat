@@ -2815,6 +2815,9 @@ struct SettingsView: View {
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     }
+                    Label(flightStatusText(for: model.flightDiagnostics), systemImage: flightStatusIcon(for: model.flightDiagnostics))
+                        .font(.caption)
+                        .foregroundStyle(model.flightDiagnostics.flightState == .flying ? .blue : .secondary)
 
                     Toggle(
                         "Speak FatCat's replies",
@@ -2988,6 +2991,27 @@ struct SettingsView: View {
 
     private func color(for status: FatCatProviderStatus) -> Color {
         switch status { case .connected: return .green; case .error: return .orange; case .needsSetup, .unavailable: return .secondary }
+    }
+
+    private func flightStatusText(for diagnostics: FatCatFlightDiagnostics) -> String {
+        switch diagnostics.flightState {
+        case .preparingToFly: return "Getting ready to fly"
+        case .flying: return "Flying now"
+        case .landing: return "Landing"
+        case .settling: return "Settling after flight"
+        case .grounded:
+            if diagnostics.movementMode == .off { return "Flight off" }
+            return "Grounded · watching for quiet time"
+        }
+    }
+
+    private func flightStatusIcon(for diagnostics: FatCatFlightDiagnostics) -> String {
+        switch diagnostics.flightState {
+        case .preparingToFly: return "arrow.up.right"
+        case .flying: return "airplane"
+        case .landing, .settling: return "arrow.down.right"
+        case .grounded: return diagnostics.movementMode == .off ? "pause.circle" : "checkmark.circle"
+        }
     }
 }
 

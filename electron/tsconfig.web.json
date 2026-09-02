@@ -20,5 +20,5 @@
     },
     "types": ["vite/client", "vitest/globals", "@testing-library/jest-dom"]
   },
-  "include": ["src/renderer/src", "src/shared", "src/preload/index.d.ts"]
+  "include": ["src/renderer/src", "src/components", "src/shared", "src/preload/index.d.ts"]
 }
