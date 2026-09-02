@@ -221,6 +221,7 @@ final class PetModel: ObservableObject {
     @Published var petSize = FatCatPetSettings.defaultSize
     @Published var movementMode = FatCatMovementMode.calm
     @Published var previewAnimationKey: String?
+    @Published var launchPresentationAnimationKey: String?
     @Published var voiceStatus: String?
     var onLifeEvent: ((FatCatLifeEvent) -> Void)?
     var retryState = FatCatRetryState()
@@ -1602,7 +1603,7 @@ struct PetRootView: View {
 
     var body: some View {
         FatCatAvatarView(
-            animationKey: model.isListening ? "listening" : (model.previewAnimationKey ?? model.life.animationKey),
+            animationKey: model.launchPresentationAnimationKey ?? (model.isListening ? "listening" : (model.previewAnimationKey ?? model.life.animationKey)),
             flightCue: model.flightCue,
             reactionCue: model.reactionCue,
             onClick: onClick,
@@ -1787,6 +1788,9 @@ final class PetWindowController: NSObject, NSWindowDelegate {
     private var flightController: FatCatFlightController!
     private var voiceController: FatCatVoiceController!
     private var speechController: FatCatSpeechController!
+    private let onboarding = OnboardingCoordinator()
+    private let permissionCoordinator = FatCatPermissionCoordinator()
+    private var onboardingConnectionCompletion: ((Bool) -> Void)?
 
     init(perception: ScreenPerceptionCoordinator) {
         self.perception = perception
@@ -1836,6 +1840,15 @@ final class PetWindowController: NSObject, NSWindowDelegate {
         buildPanel()
         buildMiniChatPanel()
         buildStatusItem()
+        onboarding.anchorProvider = { [weak self] in self?.panel.frame ?? .zero }
+        onboarding.openProviderSetup = { [weak self] in self?.showSettings() }
+        onboarding.testConnection = { [weak self] completion in
+            guard let self else { completion(false); return }
+            self.onboardingConnectionCompletion = completion
+            self.sendChat(promptOverride: "Hi Hermes. Reply with one short welcome for our first connection test.")
+        }
+        onboarding.startUsefulTask = { [weak self] in self?.sendChat(promptOverride: "Help me understand what I’m looking at.") }
+        onboarding.onFinish = { [weak self] in self?.performArrivalSettle() }
     }
 
     private func recordObservation(_ observation: ObservationPayload) {
@@ -1845,6 +1858,13 @@ final class PetWindowController: NSObject, NSWindowDelegate {
             auditStore = try? FatCatAuditStore(path: support.appendingPathComponent("fatcat.sqlite3").path)
         }
         try? auditStore?.recordObservation(activeApp: observation.activeApp, window: observation.visibleWindow, redacted: observation.privacy.redacted)
+    }
+
+    private func performArrivalSettle() {
+        // A small cue through the normal avatar system; launch presentation owns no pet state.
+        model.launchPresentationAnimationKey = nil
+        let revision = (model.reactionCue?.revision ?? 0) + 1
+        model.reactionCue = ReactionCue(intensity: 0.32, durationMs: 420, revision: revision)
     }
 
     func show() {
@@ -1861,6 +1881,13 @@ final class PetWindowController: NSObject, NSWindowDelegate {
         panel.orderFrontRegardless()
         agent.requestProviderInventory()
         flightController.start(panel: panel)
+    }
+
+    func presentOnboardingIfNeeded() {
+        guard onboarding.shouldPresent else { return }
+        let screen = panel.screen ?? NSScreen.main ?? NSScreen.screens[0]
+        model.launchPresentationAnimationKey = "curious"
+        onboarding.start(on: screen)
     }
 
     func stop() {
@@ -2307,6 +2334,7 @@ final class PetWindowController: NSObject, NSWindowDelegate {
                 finishedRequestIDs.insert(requestID)
                 model.completeAssistant(requestID: requestID)
                 model.handleLife(.hermes(.turnCompleted))
+                completeOnboardingConnection(succeeded: true)
             case "session.state":
                 if let rawState = event.details["state"], let state = FatCatAgentState(rawValue: rawState) {
                     handleAgentState(state, requestID: event.requestID)
@@ -2351,6 +2379,7 @@ final class PetWindowController: NSObject, NSWindowDelegate {
                 model.isGenerating = false
                 model.currentRequestID = nil
             }
+            completeOnboardingConnection(succeeded: false)
         case let .sessionReady(_, conversationID, sessionID):
             guard conversationID == model.selectedConversationID else {
                 if pendingSessionConversationID == conversationID {
@@ -2401,6 +2430,12 @@ final class PetWindowController: NSObject, NSWindowDelegate {
         )
     }
 
+    private func completeOnboardingConnection(succeeded: Bool) {
+        guard let completion = onboardingConnectionCompletion else { return }
+        onboardingConnectionCompletion = nil
+        completion(succeeded)
+    }
+
     private func handleAgentState(_ state: FatCatAgentState, requestID: String? = nil) {
         switch state {
         case .connecting: model.agentStatus = "Connecting…"
@@ -2416,6 +2451,7 @@ final class PetWindowController: NSObject, NSWindowDelegate {
                 model.completeAssistant(requestID: completedRequestID)
             }
             model.handleLife(.hermes(.turnCompleted))
+            completeOnboardingConnection(succeeded: true)
             if model.speakReplies,
                let completedRequestID,
                completedRequestID != lastSpokenRequestID,
@@ -2432,6 +2468,7 @@ final class PetWindowController: NSObject, NSWindowDelegate {
                 model.failAssistant(requestID: requestID, message: "FatCat Agent stopped before completing the response.")
             }
             model.handleLife(.hermes(.turnFailed))
+            completeOnboardingConnection(succeeded: false)
             if let conversationID = model.selectedConversationID, let sessionID = activeSessionID {
                 startNextPendingPrompt(for: conversationID, sessionID: sessionID)
             }
@@ -2443,9 +2480,11 @@ final class PetWindowController: NSObject, NSWindowDelegate {
             model.handleLife(.hermes(.permissionRequested))
         case .error:
             model.handleLife(.hermes(.turnFailed))
+            completeOnboardingConnection(succeeded: false)
         case .disconnected:
             model.agentStatus = "Disconnected — reconnect to continue."
             model.handleLife(.hermes(.disconnected))
+            completeOnboardingConnection(succeeded: false)
         case .idle, .listening:
             break
         }
@@ -2513,7 +2552,10 @@ final class PetWindowController: NSObject, NSWindowDelegate {
             model: model,
             status: perception.status,
             isPaused: perception.isPaused,
-            requestAccess: { [weak self] in self?.perception.requestAccess() },
+            requestAccess: { [weak self] in
+                guard let self else { return }
+                self.permissionCoordinator.request(.screenAwareness, enableScreenAwareness: self.perception.requestAccess)
+            },
             togglePause: { [weak self] in self?.toggleObservation() },
             refreshProviders: { [weak self] in self?.agent.requestProviderInventory() },
             refreshModels: { [weak self] providerID in self?.agent.requestProviderModels(providerID: providerID) },
@@ -2817,6 +2859,7 @@ final class FatCatAppDelegate: NSObject, NSApplicationDelegate {
         windowController.show()
         DispatchQueue.main.async { [weak self] in
             self?.windowController.show()
+            self?.windowController.presentOnboardingIfNeeded()
         }
     }
 
