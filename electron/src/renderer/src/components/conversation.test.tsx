@@ -52,9 +52,20 @@ describe('conversation experience', () => {
 
   it('resolves plain streaming text word by word and shows a live cursor', () => {
     render(<MessageRow message={{ ...assistant, text: 'Hello from FatCat', isStreaming: true, activities: [] }} onCopy={vi.fn()} onRetry={vi.fn()} />)
-    expect(screen.getByLabelText('Streaming response')).toBeInTheDocument()
+    expect(screen.getByLabelText('Streaming response')).toHaveClass('streaming-response')
     expect(screen.getAllByTestId('streaming-token')).toHaveLength(3)
     expect(screen.getByLabelText('Streaming response').querySelector('.streaming-cursor')).toBeInTheDocument()
+  })
+
+  it('keeps markdown literal while the response is live and shows a writing state', () => {
+    const { rerender } = render(<MessageRow message={{ ...assistant, text: 'Hello **FatCat**', isStreaming: true, activities: [] }} onCopy={vi.fn()} onRetry={vi.fn()} />)
+    const live = screen.getByLabelText('Streaming response')
+    expect(live).toHaveClass('streaming-response')
+    expect(live).toHaveTextContent('Hello **FatCat**')
+    expect(screen.queryByText('FatCat', { selector: 'strong' })).not.toBeInTheDocument()
+
+    rerender(<MessageRow message={{ ...assistant, text: '', isStreaming: true, activities: [] }} onCopy={vi.fn()} onRetry={vi.fn()} />)
+    expect(screen.getByLabelText('Streaming response')).toHaveTextContent('Waiting for response')
   })
 
   it('sends with Return, preserves Shift-Return, and switches to Stop while generating', async () => {

@@ -29,9 +29,15 @@ export function MessageRow({ message, onCopy, onRetry, onApprove = () => undefin
           <div className="rounded-[10px] rounded-br-[4px] border-[0.5px] border-border/70 bg-muted/80 px-3.5 py-2.5 text-sm leading-6">{message.text}</div>
         ) : (
           <div className="fatcat-markdown text-[13px] leading-6">
-            {message.text ? shouldAnimatePlainText(message.text) && message.isStreaming ? (
-              <StreamingText text={message.text} isStreaming />
-            ) : (
+            {message.isStreaming ? (
+              <div className="streaming-response" aria-label="Streaming response">
+                <div className="streaming-response-status" aria-hidden="true">
+                  <span className="streaming-live-dot" />
+                  <span className="streaming-response-label">{message.text ? 'Writing' : 'Waiting for response'}</span>
+                </div>
+                {message.text ? <StreamingText text={message.text} isStreaming /> : <span className="streaming-placeholder">The first words are on their way…</span>}
+              </div>
+            ) : message.text ? (
               <ReactMarkdown
                 remarkPlugins={[remarkGfm]}
                 components={{
@@ -40,8 +46,7 @@ export function MessageRow({ message, onCopy, onRetry, onApprove = () => undefin
                   code: ({ children, className, node: _node, ...props }) => <code {...props} className={`${className ?? ''} rounded bg-muted px-1 py-0.5 font-mono text-[0.9em]`}>{children}</code>,
                 }}
               >{message.text}</ReactMarkdown>
-            ) : <span className="text-muted-foreground">Thinking…</span>}
-            {message.isStreaming && !shouldAnimatePlainText(message.text) && <span className="streaming-cursor ml-1" aria-label="Streaming" />}
+            ) : null}
           </div>
         )}
         {message.errorMessage && (
@@ -57,8 +62,4 @@ export function MessageRow({ message, onCopy, onRetry, onApprove = () => undefin
       </div>
     </article>
   )
-}
-
-function shouldAnimatePlainText(text: string): boolean {
-  return !/[`*_#[\]()>~-]/.test(text)
 }

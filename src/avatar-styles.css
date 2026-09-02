@@ -26,6 +26,20 @@ body {
   -webkit-user-select: none;
 }
 
+.fatcat-avatar-surface::before {
+  position: absolute;
+  z-index: 0;
+  inset: 7%;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 50%;
+  background: radial-gradient(circle at 36% 28%, rgba(255, 255, 255, 0.26), rgba(255, 255, 255, 0.08) 42%, rgba(255, 255, 255, 0) 72%);
+  box-shadow: 0 0 30px rgba(255, 255, 255, 0.14), inset 0 1px 0 rgba(255, 255, 255, 0.22);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  content: '';
+  pointer-events: none;
+}
+
 .fatcat-avatar-surface:active {
   cursor: grabbing;
 }

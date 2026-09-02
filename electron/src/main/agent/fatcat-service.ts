@@ -36,6 +36,7 @@ export class FatCatService extends EventEmitter {
   private providers: ProviderSummary[] = []
   private seenHermesEventIds = new Set<string>()
   private finishedRequestIds = new Set<string>()
+  private hasLocalConversationSelection = false
   private appearance: AppearancePreference
   private eventChain: Promise<void> = Promise.resolve()
 
@@ -66,6 +67,7 @@ export class FatCatService extends EventEmitter {
     const workspace = workspacePath?.trim() || existing.records[0]?.workspacePath || this.options.defaultWorkspace || homedir()
     const record = await this.options.repository.create('New chat', workspace)
     this.selectedConversationId = record.id
+    this.hasLocalConversationSelection = true
     this.messages = []
     this.resumeError = null
     this.activeRequestId = null
@@ -81,6 +83,7 @@ export class FatCatService extends EventEmitter {
     const record = document.records.find((candidate) => candidate.id === id)
     if (!record) throw new Error(`Conversation not found: ${id}`)
     this.selectedConversationId = id
+    this.hasLocalConversationSelection = true
     this.messages = []
     this.activeRequestId = null
     this.finishedRequestIds.clear()
@@ -235,12 +238,24 @@ export class FatCatService extends EventEmitter {
       const selectedId = localSelected && records.some((record) => record.id === localSelected)
         ? localSelected
         : (current.selectedId && records.some((record) => record.id === current.selectedId) ? current.selectedId : event.selected_id)
+      const shouldLoadInitialSession = !this.hasLocalConversationSelection && selectedId !== null
       this.selectedConversationId = selectedId
+      this.hasLocalConversationSelection = selectedId !== null
       await this.options.repository.replace({
         selectedId,
         records,
       })
       const selected = event.records.find((record) => record.id === selectedId)
+      if (shouldLoadInitialSession && selected?.session_id) {
+        this.transport.send({
+          version: 1,
+          type: 'load_session',
+          request_id: randomUUID(),
+          conversation_id: selected.id,
+          session_id: selected.session_id,
+          cwd: selected.workspace_path,
+        })
+      }
       await this.emitSnapshot()
       return
     }

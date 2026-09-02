@@ -64,4 +64,10 @@ describe('FatCat avatar visual contract', () => {
     expect(appMain).toContain('drawsBackground')
     expect(appMain).toContain('underPageBackgroundColor = .clear')
   })
+
+  it('adds a restrained light glass halo for dark desktop backgrounds', () => {
+    expect(avatarStyles).toContain('.fatcat-avatar-surface::before')
+    expect(avatarStyles).toMatch(/backdrop-filter:\s*blur\(/)
+    expect(avatarStyles).toContain('rgba(255, 255, 255')
+  })
 })

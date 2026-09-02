@@ -59,6 +59,25 @@ describe('FatCatService', () => {
     })
   })
 
+  it('loads the selected shared session when the Electron client first connects', async () => {
+    transport.event({
+      version: 1,
+      type: 'conversation_snapshot',
+      selected_id: 'c1',
+      records: [{ id: 'c1', title: 'Shared', workspace_path: '/tmp/project', session_id: 's1' }],
+    })
+
+    await vi.waitFor(() => expect(transport.commands).toContainEqual(expect.objectContaining({
+      type: 'load_session',
+      conversation_id: 'c1',
+      session_id: 's1',
+      cwd: '/tmp/project',
+    })))
+
+    transport.event({ version: 1, type: 'session_history', conversation_id: 'c1', session_id: 's1', role: 'assistant', text: 'Restored from native' })
+    await vi.waitFor(async () => expect((await service.snapshot()).messages.at(-1)?.text).toBe('Restored from native'))
+  })
+
   it('enforces one turn and ignores late deltas after cancellation', async () => {
     const record = await service.createConversation('/tmp/project')
     const creation = transport.commands.at(-1)!
